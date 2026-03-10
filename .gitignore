@@ -3,7 +3,10 @@ __pycache__/
 .venv/
 .env
 *.db
+*.db-shm
+*.db-wal
 wheels/
 .idea/
 .vscode/
-*.db
+node_modules/
+dashboard/

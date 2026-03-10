@@ -67,16 +67,14 @@ async def get_anomalies(
 
 async def get_active_anomalies() -> list[dict[str, Any]]:
     return await execute(
-        "SELECT * FROM anomalies WHERE status IN ('detected', 'acknowledged', 'investigating') ORDER BY detected_at DESC"
+        "SELECT * FROM anomalies WHERE status IN ('detected', 'in_progress') ORDER BY detected_at DESC"
     )
 
 
 async def update_anomaly_status(anomaly_id: int, status: str, resolved_by: str | None = None) -> int:
     extra = ""
     params: dict[str, Any] = {"id": anomaly_id, "status": status}
-    if status == "acknowledged":
-        extra = ", acknowledged_at = SYSTIMESTAMP"
-    elif status in ("resolved", "false_positive"):
+    if status == "resolved":
         extra = ", resolved_at = SYSTIMESTAMP, resolved_by = :resolved_by"
         params["resolved_by"] = resolved_by
     return await execute_dml(

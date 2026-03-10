@@ -16,10 +16,10 @@ async def overview():
         """SELECT
              COUNT(*) AS total,
              SUM(CASE WHEN status = 'detected' THEN 1 ELSE 0 END) AS detected,
-             SUM(CASE WHEN status = 'acknowledged' THEN 1 ELSE 0 END) AS acknowledged,
-             SUM(CASE WHEN status = 'investigating' THEN 1 ELSE 0 END) AS investigating,
-             SUM(CASE WHEN severity = 'critical' AND status IN ('detected','acknowledged','investigating') THEN 1 ELSE 0 END) AS active_critical,
-             SUM(CASE WHEN severity = 'warning' AND status IN ('detected','acknowledged','investigating') THEN 1 ELSE 0 END) AS active_warning
+             SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END) AS in_progress,
+             SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) AS resolved,
+             SUM(CASE WHEN severity = 'critical' AND status IN ('detected','in_progress') THEN 1 ELSE 0 END) AS active_critical,
+             SUM(CASE WHEN severity = 'warning' AND status IN ('detected','in_progress') THEN 1 ELSE 0 END) AS active_warning
            FROM anomalies
            WHERE detected_at >= SYSTIMESTAMP - INTERVAL '24' HOUR"""
     )
@@ -59,7 +59,7 @@ async def heatmap():
         """SELECT category, severity, COUNT(*) AS count
            FROM anomalies
            WHERE detected_at >= SYSTIMESTAMP - INTERVAL '24' HOUR
-             AND status IN ('detected', 'acknowledged', 'investigating')
+             AND status IN ('detected', 'in_progress')
            GROUP BY category, severity
            ORDER BY category, severity"""
     )

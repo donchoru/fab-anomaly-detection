@@ -306,13 +306,13 @@ if page == "대시보드":
     with col_left:
         section_header("📈", "상태 분포 (24h)")
         status_data = {
-            "detected": summary.get("detected", 0),
-            "acknowledged": summary.get("acknowledged", 0),
-            "investigating": summary.get("investigating", 0),
+            "감지됨": summary.get("detected", 0),
+            "처리중": summary.get("in_progress", 0),
+            "해결": summary.get("resolved", 0),
         }
         labels = list(status_data.keys())
         values = list(status_data.values())
-        colors = ["#ef4444", "#f59e0b", "#3b82f6"]
+        colors = ["#ef4444", "#f59e0b", "#10b981"]
         fig = go.Figure(go.Bar(
             x=values, y=labels, orientation="h",
             marker_color=colors,
@@ -370,7 +370,8 @@ elif page == "이상 목록":
 
     status_filter = st.radio(
         "상태 필터",
-        ["전체", "detected", "acknowledged", "investigating", "resolved", "false_positive"],
+        ["전체", "detected", "in_progress", "resolved"],
+        format_func=lambda x: {"전체": "전체", "detected": "감지됨", "in_progress": "처리중", "resolved": "해결"}[x],
         horizontal=True,
     )
 
@@ -466,31 +467,18 @@ elif page == "이상 목록":
                 current = a.get("status", "detected")
                 anomaly_id = a["anomaly_id"]
 
-                btn_cols = st.columns(4)
+                btn_cols = st.columns(2)
                 if current == "detected":
-                    if btn_cols[0].button("✅ 확인", key=f"ack_{anomaly_id}", use_container_width=True):
+                    if btn_cols[0].button("🔧 처리 시작", key=f"prog_{anomaly_id}", use_container_width=True):
                         try:
-                            api.update_anomaly_status(anomaly_id, "acknowledged")
+                            api.update_anomaly_status(anomaly_id, "in_progress")
                             st.rerun()
                         except Exception as e:
                             st.error(str(e))
-                if current in ("detected", "acknowledged"):
-                    if btn_cols[1].button("🔍 조사 중", key=f"inv_{anomaly_id}", use_container_width=True):
-                        try:
-                            api.update_anomaly_status(anomaly_id, "investigating")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(str(e))
-                if current in ("acknowledged", "investigating"):
-                    if btn_cols[2].button("✔ 해결", key=f"res_{anomaly_id}", use_container_width=True):
+                if current in ("detected", "in_progress"):
+                    if btn_cols[1].button("✔ 해결", key=f"res_{anomaly_id}", use_container_width=True):
                         try:
                             api.update_anomaly_status(anomaly_id, "resolved", resolved_by="dashboard")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(str(e))
-                    if btn_cols[3].button("❌ 오탐", key=f"fp_{anomaly_id}", use_container_width=True):
-                        try:
-                            api.update_anomaly_status(anomaly_id, "false_positive", resolved_by="dashboard")
                             st.rerun()
                         except Exception as e:
                             st.error(str(e))
@@ -543,30 +531,10 @@ elif page == "규칙 관리":
                         key="th_tool",
                     )
 
-                    # 선택된 도구의 파라미터 & 컬럼
+                    # 선택된 도구의 컬럼
                     tool_info = tool_catalog.get(th_tool, {})
                     if tool_info:
                         st.caption(f"📋 {tool_info.get('description', '')}")
-
-                        # 도구 파라미터 입력
-                        tool_params = tool_info.get("params", [])
-                        th_args = {}
-                        if tool_params:
-                            param_cols = st.columns(len(tool_params))
-                            for i, p in enumerate(tool_params):
-                                with param_cols[i]:
-                                    val = st.text_input(
-                                        f"{p['label']} {'*' if p.get('required') else '(선택)'}",
-                                        key=f"th_p_{p['name']}",
-                                    )
-                                    if val:
-                                        if p.get("type") == "integer":
-                                            try:
-                                                th_args[p["name"]] = int(val)
-                                            except ValueError:
-                                                th_args[p["name"]] = val
-                                        else:
-                                            th_args[p["name"]] = val
 
                         # 컬럼 선택
                         columns = tool_info.get("columns", [])
@@ -590,14 +558,12 @@ elif page == "규칙 관리":
                         if not th_name or not th_tool:
                             st.error("규칙명과 도구는 필수입니다.")
                         else:
-                            import json as _json
                             data = {
                                 "rule_name": th_name,
                                 "category": tool_info.get("category", "logistics"),
                                 "subcategory": th_tool.replace("get_", ""),
                                 "source_type": "tool",
                                 "tool_name": th_tool,
-                                "tool_args": _json.dumps(th_args) if th_args else None,
                                 "tool_column": th_column if tool_info else None,
                                 "check_type": "threshold",
                                 "threshold_op": th_op,
@@ -642,26 +608,6 @@ elif page == "규칙 관리":
                     if ai_tool_info:
                         st.caption(f"📋 {ai_tool_info.get('description', '')}")
 
-                        # 도구 파라미터
-                        ai_params = ai_tool_info.get("params", [])
-                        ai_args = {}
-                        if ai_params:
-                            param_cols = st.columns(len(ai_params))
-                            for i, p in enumerate(ai_params):
-                                with param_cols[i]:
-                                    val = st.text_input(
-                                        f"{p['label']} {'*' if p.get('required') else '(선택)'}",
-                                        key=f"ai_p_{p['name']}",
-                                    )
-                                    if val:
-                                        if p.get("type") == "integer":
-                                            try:
-                                                ai_args[p["name"]] = int(val)
-                                            except ValueError:
-                                                ai_args[p["name"]] = val
-                                        else:
-                                            ai_args[p["name"]] = val
-
                     # 자연어 조건
                     ai_prompt = st.text_area(
                         "이상 조건 설명 *",
@@ -675,14 +621,12 @@ elif page == "규칙 관리":
                         if not ai_name or not ai_tool or not ai_prompt:
                             st.error("규칙명, 도구, 이상 조건은 필수입니다.")
                         else:
-                            import json as _json
                             data = {
                                 "rule_name": ai_name,
                                 "category": ai_tool_info.get("category", "logistics"),
                                 "subcategory": ai_tool.replace("get_", ""),
                                 "source_type": "tool",
                                 "tool_name": ai_tool,
-                                "tool_args": _json.dumps(ai_args) if ai_args else None,
                                 "check_type": "llm",
                                 "llm_enabled": 1,
                                 "llm_prompt": ai_prompt,
