@@ -36,21 +36,10 @@ class SchedulerConfig:
 
 
 @dataclass
-class RAGConfig:
-    enabled: bool = field(default_factory=lambda: os.getenv("RAG_ENABLED", "true").lower() == "true")
-    milvus_uri: str = field(default_factory=lambda: os.getenv("MILVUS_URI", "http://localhost:19530"))
-    embedding_model: str = field(default_factory=lambda: os.getenv("EMBEDDING_MODEL", "bge-m3"))
-    embedding_dim: int = field(default_factory=lambda: int(os.getenv("EMBEDDING_DIM", "1024")))
-    top_k: int = 5
-    min_score: float = 0.3
-
-
-@dataclass
 class Settings:
     oracle: OracleConfig = field(default_factory=OracleConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
-    rag: RAGConfig = field(default_factory=RAGConfig)
     host: str = "0.0.0.0"
     port: int = 8600
     debug: bool = field(default_factory=lambda: os.getenv("DEBUG", "false").lower() == "true")

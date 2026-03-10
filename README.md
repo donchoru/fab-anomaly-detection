@@ -2,7 +2,7 @@
 
 반도체 FAB 폐쇄망 환경에서 **물류 / 재공(WIP) / 설비** 이상을 AI 에이전트가 주기적으로 감지하여 대시보드로 제공하는 시스템.
 
-오픈소스 프레임워크(LangChain 등) 없이, **OpenAI 호환 LLM + Oracle DB + 자체 ReAct 에이전트**로 구축했습니다.
+오픈소스 프레임워크(LangChain 등) 없이, **OpenAI 호환 LLM + Oracle DB + 도구 기반 에이전트**로 구축했습니다.
 
 > 시뮬레이터 포함 — Oracle 없이 **SQLite + 더미 데이터**로 즉시 실행 가능합니다.
 
@@ -25,37 +25,27 @@
   │     ├─ absence   : 데이터 없음?         (예: 30분간 반송 기록 없음)
   │     └─ llm       : AI에게 판단 위임     (예: ERROR AGV 비율 판단)
   │
-  └─ 3. 위반 시 → AI 에이전트가 추가 조회 + 분석 → 이상 등록
+  └─ 3. 위반 시 (llm_enabled)
+        → 지정된 도구 데이터 → LLM 1회 판단
+        → 실제 이상 여부 확인 → DB INSERT
 ```
 
-### 2. AI 에이전트 (ReAct 패턴)
+### 2. LLM 판단 (llm_enabled 규칙)
 
-단순 임계치 초과가 아닌, **LLM이 15개 도구를 활용해 직접 판단**합니다.
+임계치 위반이 감지되면, **LLM이 해당 도구의 데이터를 보고 실제 이상인지 판단**합니다.
 
 ```
-[규칙 위반 감지]
-  → 에이전트 호출 (ReAct, 최대 3라운드)
-    → 도구 호출: get_conveyor_load() → 부하율 확인
-    → 도구 호출: get_bottleneck_zones() → 병목 여부 확인
-    → 도구 호출: get_zone_transfer_history() → 최근 반송 이력
-    → RAG 검색: 과거 유사 사고 사례 참조
-    → 최종 판단: "LINE03-ZONE-A 컨베이어 과부하 및 병목 발생"
+[컨베이어 부하율 > 95% 위반]
+  → get_conveyor_load() 데이터 전달
+  → LLM 판단: "LINE03-ZONE-A 부하율 100%, 병목 발생 확인"
+  → 이상 등록 (severity: critical)
 ```
 
-### 3. RAG 전문지식
+- 규칙에 **도구가 1개 지정**되어 있고, 그 데이터만 LLM에 전달
+- LLM은 데이터를 보고 이상 여부 + 설명 + 영향 대상을 판단
+- `llm_enabled: false`인 규칙은 임계치만으로 자동 판정 (LLM 호출 없음)
 
-이상감지 시 **반도체 FAB 도메인 전문지식**을 벡터 검색하여 LLM 판단에 활용합니다.
-
-| 지식 파일 | 내용 |
-|-----------|------|
-| `equipment.md` | 알람 코드 분류 (A-5xx/3xx/2xx/V-1xx), 설비별 특성, 연쇄 영향 패턴 |
-| `process.md` | TFT/CELL/MODULE 공정 순서, WIP 관리 기준, 에이징 LOT 판단 |
-| `logistics.md` | 컨베이어 부하율 기준, AGV 가동률, 병목 판단/해소 방법 |
-| `incidents.md` | 과거 사고 사례 4건 및 교훈 |
-
-> 📁 `examples/rag-knowledge/` 에서 전문지식 예시를 확인할 수 있습니다.
-
-### 4. YAML 기반 규칙 관리
+### 3. YAML 기반 규칙 관리
 
 `rules.yaml`이 규칙의 **원본(Source of Truth)**입니다.
 
@@ -133,20 +123,29 @@ Streamlit 대시보드에서 규칙을 추가할 때 2가지 패턴을 선택할
 ### 패턴 2: 🤖 AI 판단
 
 도구를 연결하고, **자연어로 이상 조건을 설명**하면 AI가 매 사이클마다 판단합니다.
+숫자 비교는 조건 감시에 맡기고, **패턴 인식·맥락 판단**처럼 코드로 표현하기 어려운 조건에 적합합니다.
 
 ```
-규칙명: "AGV 가동률 저하"
-  → 도구: get_agv_utilization (AGV/OHT 가동률)
-  → 이상 조건: "ERROR 상태 AGV의 비율을 확인해.
-               전체의 15% 이상이면 경고, 30% 이상이면 위험으로 판단해."
+규칙명: "설비 상태 복합 이상"
+  → 도구: get_equipment_status (설비 현재 상태)
+  → 이상 조건: "같은 라인에서 2대 이상 동시 DOWN이면 이상.
+               PM 상태는 정상이니 제외해. DOWN인데 알람이 없으면 더 위험해."
 ```
 
 ---
 
 ## 이상 상태 흐름
 
-```
-감지됨 (detected) ──→ 처리중 (in_progress) ──→ 해결 (resolved)
+```mermaid
+stateDiagram-v2
+    [*] --> detected: 규칙 위반 감지
+    detected --> in_progress: 담당자 처리 시작
+    detected --> resolved: 즉시 해결
+    in_progress --> resolved: 조치 완료
+
+    detected: 감지됨
+    in_progress: 처리중
+    resolved: 해결
 ```
 
 | 상태 | 설명 |
@@ -159,40 +158,245 @@ Streamlit 대시보드에서 규칙을 추가할 때 2가지 패턴을 선택할
 
 ## 아키텍처
 
+### 시스템 구성도
+
+```mermaid
+graph TB
+    subgraph client["👤 Streamlit 대시보드 (:3009)"]
+        page1["대시보드<br/>KPI + 차트"]
+        page2["이상 목록<br/>상세 + 상태전이"]
+        page3["규칙 관리<br/>조건감시 / AI판단"]
+        page4["감지 로그<br/>사이클 이력"]
+    end
+
+    subgraph server["⚙️ FastAPI 서버 (:8600)"]
+        api["REST API"]
+        scheduler["APScheduler<br/>매 5분"]
+        engine["Rule Engine<br/>threshold / delta<br/>absence / llm"]
+        agent["Detection Agent<br/>LLM 판단"]
+    end
+
+    subgraph tools["🔧 도구 (15개)"]
+        logistics["물류 5개<br/>conveyor, throughput<br/>bottleneck, AGV, history"]
+        wip["재공 5개<br/>levels, flow, queue<br/>aging, trend"]
+        equipment["설비 5개<br/>status, utilization<br/>downs, PM, alarms"]
+    end
+
+    subgraph data["💾 데이터"]
+        yaml["rules.yaml<br/>규칙 원본"]
+        db[("Oracle DB<br/>MES 14 테이블<br/>+ 감지 테이블")]
+    end
+
+    client <-->|httpx| api
+    scheduler --> engine
+    engine --> tools
+    engine -->|위반 + llm_enabled| agent
+    agent -->|도구 데이터 전달| LLM["LLM<br/>Gemini 2.0 Flash"]
+    tools --> db
+    agent -->|이상 등록| db
+    yaml <-->|양방향 동기화| db
+
+    style client fill:#1e293b,stroke:#3b82f6,color:#f3f4f6
+    style server fill:#1e293b,stroke:#10b981,color:#f3f4f6
+    style tools fill:#1e293b,stroke:#f59e0b,color:#f3f4f6
+    style data fill:#1e293b,stroke:#8b5cf6,color:#f3f4f6
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                       FAB 이상감지 시스템                              │
-│                                                                     │
-│   rules.yaml ──→ DB 동기화                                          │
-│                    │                                                 │
-│   ┌────────────┐   │    ┌────────────────────┐                      │
-│   │ Scheduler  │───┴───→│  Detection Agent   │                      │
-│   │ (매 5분)   │        │  (ReAct + 15 Tools)│                      │
-│   └────────────┘        └────────┬───────────┘                      │
-│                                  │                                   │
-│                    ┌─────────────┼─────────────┐                    │
-│                    │ RAG 검색    │ 도구 호출    │                    │
-│                    │ (Milvus)    │ (DB 조회)   │                    │
-│                    └─────────────┼─────────────┘                    │
-│                                  ▼                                   │
-│                         ┌────────────────┐                          │
-│                         │  Oracle DB     │                          │
-│                         │  anomalies     │                          │
-│                         └───────┬────────┘                          │
-│                                 │                                    │
-│   ┌─────────────────────────────┼───────────────────────────────┐   │
-│   │          Streamlit 대시보드 (:3009)                          │   │
-│   │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐      │   │
-│   │  │ 대시보드  │ │ 이상목록  │ │ 규칙관리  │ │ 감지로그  │      │   │
-│   │  │ KPI+차트 │ │ 상세+AI  │ │ 추가+테스트│ │ 사이클   │      │   │
-│   │  └──────────┘ └──────────┘ └──────────┘ └──────────┘      │   │
-│   └─────────────────────────────────────────────────────────────┘   │
-│                                                                     │
-│   ┌────────────┐    ┌────────────┐    ┌────────────────────┐       │
-│   │ Rule Engine │    │ FastAPI    │    │ Oracle DB          │       │
-│   │ 도구+임계치  │    │ :8600      │    │ MES + 감지 테이블   │       │
-│   └────────────┘    └────────────┘    └────────────────────┘       │
-└─────────────────────────────────────────────────────────────────────┘
+
+### 감지 사이클 시퀀스
+
+```mermaid
+sequenceDiagram
+    participant S as Scheduler<br/>(매 5분)
+    participant E as Rule Engine
+    participant T as Tool<br/>(15개)
+    participant DB as Oracle DB
+    participant L as LLM<br/>(Gemini)
+    participant A as anomalies<br/>테이블
+
+    S->>DB: 활성 규칙 로드
+    DB-->>S: 규칙 5개
+
+    loop 규칙별 평가
+        S->>E: evaluate_rule(rule)
+        E->>T: 지정된 도구 호출<br/>예: get_conveyor_load()
+        T->>DB: MES 테이블 조회
+        DB-->>T: 데이터 rows
+        T-->>E: 측정값 반환
+
+        alt check_type = threshold
+            E->>E: 측정값 vs 임계치 비교
+        else check_type = delta
+            E->>E: 변화율(절대값) vs 임계치
+        else check_type = absence
+            E->>E: 데이터 없음 여부
+        else check_type = llm
+            E->>E: 항상 위반 (LLM이 최종 판단)
+        end
+
+        opt 위반 + llm_enabled
+            E->>L: 도구 데이터 + 프롬프트
+            L-->>E: 이상 판단 + 설명 + 영향 대상
+        end
+
+        opt 이상 확정
+            E->>A: INSERT (severity, title, description)
+        end
+    end
+
+    S->>DB: 사이클 로그 저장<br/>(규칙 수, 이상 수, 소요시간)
+```
+
+### 규칙 YAML ↔ DB 동기화
+
+```mermaid
+sequenceDiagram
+    participant Y as rules.yaml<br/>(원본)
+    participant L as loader.py
+    participant DB as Oracle DB
+    participant UI as Streamlit<br/>대시보드
+
+    Note over Y,DB: 서버 시작 시 (YAML → DB)
+    Y->>L: load_from_yaml()
+    L->>DB: 규칙별 UPSERT<br/>(이름 기준 매칭)
+    L->>DB: YAML에 없는 규칙 DELETE
+
+    Note over UI,Y: UI에서 규칙 변경 시 (DB → YAML)
+    UI->>DB: POST /api/rules (생성)
+    DB-->>L: sync_db_to_yaml()
+    L->>DB: SELECT * FROM detection_rules
+    L->>Y: save_to_yaml(rules)
+    Note over Y: rules.yaml 자동 갱신
+```
+
+### 컴포넌트 구조
+
+```mermaid
+graph LR
+    subgraph main["main.py"]
+        FastAPI
+        APScheduler
+    end
+
+    subgraph detection["detection/"]
+        scheduler.py --> evaluator.py
+    end
+
+    subgraph rules["rules/"]
+        engine.py
+        loader.py
+        models.py
+    end
+
+    subgraph agent["agent/"]
+        detection_agent.py
+        llm_client.py
+        tool_registry.py
+    end
+
+    subgraph tools["agent/tools/"]
+        logistics.py
+        wip.py
+        equipment.py
+    end
+
+    subgraph api["api/"]
+        api_rules["rules.py"]
+        anomalies.py
+        dashboard.py
+        system.py
+    end
+
+    main --> detection
+    main --> api
+    evaluator.py --> engine.py
+    evaluator.py --> detection_agent.py
+    engine.py --> tool_registry.py
+    tool_registry.py --> tools
+    detection_agent.py --> llm_client.py
+    api_rules --> loader.py
+    loader.py --> rules.yaml["rules.yaml"]
+
+    style main fill:#065f46,stroke:#10b981,color:#f3f4f6
+    style detection fill:#1e3a5f,stroke:#3b82f6,color:#f3f4f6
+    style rules fill:#5b21b6,stroke:#8b5cf6,color:#f3f4f6
+    style agent fill:#92400e,stroke:#f59e0b,color:#f3f4f6
+    style tools fill:#92400e,stroke:#f59e0b,color:#f3f4f6
+    style api fill:#1e293b,stroke:#64748b,color:#f3f4f6
+```
+
+### ER 다이어그램 (DB 테이블)
+
+```mermaid
+erDiagram
+    detection_rules {
+        int rule_id PK
+        varchar rule_name UK
+        varchar category
+        varchar subcategory
+        varchar check_type "threshold/delta/absence/llm"
+        varchar source_type "sql/tool"
+        varchar tool_name
+        clob tool_args "JSON"
+        varchar tool_column
+        varchar threshold_op
+        float warning_value
+        float critical_value
+        int eval_interval "초"
+        int llm_enabled "0/1"
+        clob llm_prompt
+        int enabled "0/1"
+    }
+
+    anomalies {
+        int anomaly_id PK
+        int rule_id FK
+        varchar category
+        varchar severity "warning/critical"
+        varchar title
+        clob description
+        float measured_value
+        float threshold_value
+        varchar affected_entity
+        clob llm_analysis
+        clob llm_suggestion
+        varchar status "detected/in_progress/resolved"
+        timestamp detected_at
+        timestamp resolved_at
+        varchar resolved_by
+    }
+
+    detection_cycles {
+        int cycle_id PK
+        timestamp started_at
+        timestamp finished_at
+        int rules_evaluated
+        int anomalies_found
+        int duration_ms
+    }
+
+    detection_rules ||--o{ anomalies : "위반 시 생성"
+    detection_cycles ||--o{ anomalies : "사이클 내 감지"
+
+    mes_conveyor_status {
+        varchar zone_id PK
+        float load_pct
+        int carrier_count
+        int capacity
+    }
+
+    mes_equipment_status {
+        varchar equipment_id PK
+        varchar line_id
+        varchar status "RUN/IDLE/DOWN/PM"
+    }
+
+    mes_wip_summary {
+        varchar process PK
+        varchar step PK
+        int current_wip
+        int target_wip
+        float wip_ratio_pct
+    }
 ```
 
 ---
@@ -207,9 +411,8 @@ Streamlit 대시보드에서 규칙을 추가할 때 2가지 패턴을 선택할
 | **DB (운영)** | Oracle (oracledb thin) | Instant Client 없이 순수 Python 연결 |
 | **DB (시뮬레이터)** | SQLite | Oracle SQL → SQLite 자동 변환 |
 | **LLM** | OpenAI 호환 API | Gemini 2.0 Flash / 사내 LLM / Ollama |
-| **벡터 검색** | Milvus (RAG) | 전문지식 임베딩 + 유사도 검색 |
 | **스케줄러** | APScheduler | 감지 주기 스케줄링 |
-| **AI 패턴** | ReAct (자체 구현) | LLM + Tool Use 에이전트 루프 |
+| **AI 패턴** | Tool + LLM 판단 | 도구 데이터 → LLM 1회 판단 |
 | **차트** | Plotly | 대시보드 시각화 |
 
 ---
@@ -219,16 +422,16 @@ Streamlit 대시보드에서 규칙을 추가할 때 2가지 패턴을 선택할
 ```
 fab-sentinel/
 ├── main.py                         # FastAPI + APScheduler 진입점 (:8600)
-├── config.py                       # 환경설정 (DB, LLM, RAG, 스케줄)
+├── config.py                       # 환경설정 (DB, LLM, 스케줄)
 ├── rules.yaml                      # 규칙 원본 (Source of Truth)
 ├── requirements.txt
 │
 ├── agent/                          # AI 에이전트
 │   ├── llm_client.py               # OpenAI 호환 LLM 클라이언트
 │   ├── tool_registry.py            # @registry.tool → JSON Schema 자동 생성
-│   ├── agent_loop.py               # ReAct 에이전트 루프 (최대 3라운드)
+│   ├── agent_loop.py               # 에이전트 루프 (도구 데이터 → LLM 판단)
 │   ├── prompts.py                  # 시스템 프롬프트
-│   ├── detection_agent.py          # 이상감지 에이전트 → DB INSERT
+│   ├── detection_agent.py          # 도구 데이터 + RAG → LLM 판단 → DB INSERT
 │   └── tools/                      # 데이터 조회 도구 (15개)
 │       ├── logistics.py            # 컨베이어, 반송, 병목존, AGV
 │       ├── wip.py                  # WIP, 흐름, 큐, 에이징, 트렌드
@@ -242,17 +445,6 @@ fab-sentinel/
 ├── detection/                      # 감지 오케스트레이션
 │   ├── scheduler.py                # 감지 사이클 관리
 │   └── evaluator.py                # 규칙별 평가 → 에이전트 연동
-│
-├── rag/                            # RAG 전문지식 시스템
-│   ├── knowledge/                  # 도메인 전문지식 (마크다운)
-│   │   ├── equipment.md            # 설비 알람 코드, 연쇄 영향
-│   │   ├── process.md              # 공정 흐름, WIP 기준
-│   │   ├── logistics.md            # 물류 부하율, AGV 기준
-│   │   └── incidents.md            # 과거 사고 사례
-│   ├── store.py                    # Milvus 벡터 저장소
-│   ├── loader.py                   # 마크다운 → 청크 → 임베딩
-│   ├── embedder.py                 # 임베딩 생성 (bge-m3)
-│   └── retriever.py                # 유사도 검색 (top_k=5)
 │
 ├── db/
 │   ├── oracle.py                   # Oracle 비동기 커넥션 풀
@@ -404,7 +596,47 @@ streamlit run streamlit_app/app.py  # 대시보드 :3009
 
 | 기능 | 설명 | 참고 파일 |
 |------|------|----------|
+| **연쇄 이상감지** | 여러 규칙의 이상을 종합 분석하여 연쇄 영향·근본 원인 도출 (아래 상세) | — |
 | **RCA (근본원인분석)** | DB 폴링으로 이상 자동 분석 | `agent/rca_agent.py` |
 | **알림** | DB 기록 → 이메일/메신저 연동 | `alert/router.py` |
 | **에스컬레이션** | 미확인 이상 자동 재알림 | `alert/escalation.py` |
 | **상관분석** | 시간/공간/인과 기반 이상 그룹핑 | `correlation/engine.py` |
+
+### 연쇄 이상감지 (Cross-Rule Insight)
+
+현재는 규칙 1개 = 도구 1개로 **단일 이상**만 감지합니다.
+하지만 실제 FAB에서는 여러 이상이 동시에 발생하며 서로 연결되어 있습니다.
+
+```mermaid
+graph LR
+    subgraph current["현재: 단일 감지"]
+        ruleA["규칙A"] --> anomA["이상A<br/>컨베이어 과부하"]
+        ruleB["규칙B"] --> anomB["이상B<br/>설비 비계획정지"]
+        ruleC["규칙C"] --> anomC["이상C<br/>WIP 급증"]
+    end
+
+    style current fill:#1e293b,stroke:#ef4444,color:#f3f4f6
+```
+
+```mermaid
+graph LR
+    subgraph goal["목표: 연쇄 분석"]
+        cause["🔴 EQ-005 정지<br/>(근본 원인)"]
+        effect1["🟡 TFT-03 WIP 적체<br/>(영향)"]
+        effect2["🟡 LINE03 컨베이어 과부하<br/>(결과)"]
+
+        cause -->|30분 후| effect1
+        effect1 -->|1시간 후| effect2
+    end
+
+    insight["💡 통찰<br/>EQ-005 복구 우선<br/>투입 제한 검토"]
+    goal --> insight
+
+    style goal fill:#1e293b,stroke:#10b981,color:#f3f4f6
+    style insight fill:#065f46,stroke:#10b981,color:#f3f4f6
+```
+
+**구현 방향:**
+- 감지 사이클 내 다건 이상 발생 시 → LLM에 전체 이상 목록 + 각 도구 데이터 전달
+- 시간/공간/인과 관계 분석 → 연쇄 그룹 생성
+- 단일 이상 설명이 아닌 **상황 전체에 대한 통찰** 제공

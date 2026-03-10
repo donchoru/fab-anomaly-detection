@@ -51,38 +51,3 @@ async def stats():
         "anomalies_24h": anomalies_24h[0]["cnt"] if anomalies_24h else 0,
         "cycles_24h": cycles_24h[0] if cycles_24h else {},
     }
-
-
-# ── RAG 지식베이스 관리 ──
-
-@router.get("/api/rag/status")
-async def rag_status():
-    """RAG 상태 확인."""
-    return {
-        "enabled": settings.rag.enabled,
-        "milvus_uri": settings.rag.milvus_uri,
-        "embedding_model": settings.rag.embedding_model,
-        "embedding_dim": settings.rag.embedding_dim,
-        "top_k": settings.rag.top_k,
-        "min_score": settings.rag.min_score,
-    }
-
-
-@router.post("/api/rag/reload")
-async def rag_reload(rebuild: bool = False):
-    """RAG 지식베이스 리로드."""
-    if not settings.rag.enabled:
-        return {"error": "RAG is disabled"}
-
-    try:
-        from rag.store import init_store
-        from rag.loader import load_knowledge
-        init_store(uri=settings.rag.milvus_uri, dim=settings.rag.embedding_dim)
-        count = await load_knowledge(
-            milvus_uri=settings.rag.milvus_uri,
-            dim=settings.rag.embedding_dim,
-            rebuild=rebuild,
-        )
-        return {"status": "ok", "chunks_loaded": count, "rebuild": rebuild}
-    except Exception as e:
-        return {"status": "error", "error": str(e)}

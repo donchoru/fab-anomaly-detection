@@ -509,49 +509,82 @@ elif page == "규칙 관리":
     # ── 규칙 추가 (관리자) ──
     if _is_admin():
         with st.expander("➕ 새 규칙 추가", expanded=False):
-            add_tab1, add_tab2 = st.tabs(["📊 임계치 감시", "🤖 AI 판단"])
+            add_tab1, add_tab2 = st.tabs(["📐 조건 감시", "🤖 AI 판단"])
 
-            # ── 탭1: 임계치 감시 ──
+            # ── 탭1: 조건 감시 ──
             with add_tab1:
                 st.markdown("""
                 <div class="detail-card">
-                    <p style="color:#9ca3af;margin:0">도구를 연결하고, 감시할 컬럼과 임계치를 설정합니다.</p>
+                    <p style="color:#9ca3af;margin:0">도구를 연결하고, 감시 조건을 설정합니다.</p>
                 </div>
                 """, unsafe_allow_html=True)
 
-                with st.form("threshold_form"):
-                    th_name = st.text_input("규칙명 *", placeholder="예: 컨베이어 부하율 과부하")
-
-                    # 도구 선택
-                    tool_opts = _tool_options()
+                # 도구 선택 + 감시 유형 (form 밖 — 변경 시 즉시 반영)
+                tool_opts = _tool_options()
+                cond_c1, cond_c2 = st.columns([2, 1])
+                with cond_c1:
                     th_tool = st.selectbox(
                         "감시 도구 *",
                         options=list(tool_opts.keys()),
                         format_func=lambda x: tool_opts.get(x, x),
                         key="th_tool",
                     )
+                with cond_c2:
+                    check_type_labels = {
+                        "threshold": "임계치 초과",
+                        "delta": "변화율 초과",
+                        "absence": "데이터 부재",
+                    }
+                    th_check_type = st.selectbox(
+                        "감시 유형 *",
+                        options=list(check_type_labels.keys()),
+                        format_func=lambda x: check_type_labels[x],
+                        key="th_check_type",
+                    )
 
-                    # 선택된 도구의 컬럼
-                    tool_info = tool_catalog.get(th_tool, {})
-                    if tool_info:
-                        st.caption(f"📋 {tool_info.get('description', '')}")
+                tool_info = tool_catalog.get(th_tool, {})
+                if tool_info:
+                    st.caption(f"📋 {tool_info.get('description', '')}")
 
-                        # 컬럼 선택
-                        columns = tool_info.get("columns", [])
-                        col_options = [c["name"] for c in columns]
-                        col_labels = {c["name"]: c["label"] for c in columns}
-                        th_column = st.selectbox(
-                            "감시 컬럼 *",
-                            options=col_options,
-                            format_func=lambda x: f"{col_labels.get(x, x)} ({x})",
-                            key="th_col",
+                # 감시 유형별 안내
+                if th_check_type == "delta":
+                    st.info("선택한 컬럼의 **변화율(절대값)**이 임계치를 초과하면 이상으로 판단합니다.")
+                elif th_check_type == "absence":
+                    st.info("도구 실행 결과 **데이터가 없으면** 이상으로 판단합니다. (컬럼/임계치 불필요)")
+
+                with st.form("threshold_form"):
+                    th_name = st.text_input("규칙명 *", placeholder="예: 컨베이어 부하율 과부하")
+
+                    if th_check_type != "absence":
+                        # 컬럼 선택 (도구에 따라 동적 변경)
+                        th_column = None
+                        if tool_info:
+                            columns = tool_info.get("columns", [])
+                            col_options = [c["name"] for c in columns]
+                            col_labels = {c["name"]: c["label"] for c in columns}
+                            th_column = st.selectbox(
+                                "감시 컬럼 *",
+                                options=col_options,
+                                format_func=lambda x: f"{col_labels.get(x, x)} ({x})",
+                                key="th_col",
+                            )
+
+                        # 임계치
+                        tc1, tc2, tc3 = st.columns(3)
+                        th_op = tc1.selectbox("조건", [">", "<", ">=", "<="], key="th_op")
+                        th_warn = tc2.number_input(
+                            "경고 임계치 *" if th_check_type == "threshold" else "경고 변화율(%) *",
+                            value=0.0, format="%.2f", key="th_warn",
                         )
-
-                    # 임계치
-                    tc1, tc2, tc3 = st.columns(3)
-                    th_op = tc1.selectbox("조건", [">", "<", ">=", "<="], key="th_op")
-                    th_warn = tc2.number_input("경고 임계치 *", value=0.0, format="%.2f", key="th_warn")
-                    th_crit = tc3.number_input("위험 임계치 *", value=0.0, format="%.2f", key="th_crit")
+                        th_crit = tc3.number_input(
+                            "위험 임계치 *" if th_check_type == "threshold" else "위험 변화율(%) *",
+                            value=0.0, format="%.2f", key="th_crit",
+                        )
+                    else:
+                        th_column = None
+                        th_op = ">"
+                        th_warn = 0.0
+                        th_crit = 0.0
 
                     th_submit = st.form_submit_button("✅ 규칙 등록", type="primary")
                     if th_submit:
@@ -564,8 +597,8 @@ elif page == "규칙 관리":
                                 "subcategory": th_tool.replace("get_", ""),
                                 "source_type": "tool",
                                 "tool_name": th_tool,
-                                "tool_column": th_column if tool_info else None,
-                                "check_type": "threshold",
+                                "tool_column": th_column,
+                                "check_type": th_check_type,
                                 "threshold_op": th_op,
                                 "warning_value": th_warn,
                                 "critical_value": th_crit,
@@ -593,20 +626,20 @@ elif page == "규칙 관리":
                 st.caption("- _ERROR 상태 AGV가 전체의 30%를 넘으면 위험_")
                 st.caption("- _설비가 DOWN인데 알람이 없으면 비정상. 알람이 있으면 대응 중._")
 
+                # 도구 선택 (form 밖 — 변경 시 즉시 반영)
+                ai_tool = st.selectbox(
+                    "데이터 도구 *",
+                    options=list(tool_opts.keys()),
+                    format_func=lambda x: tool_opts.get(x, x),
+                    key="ai_tool",
+                )
+
+                ai_tool_info = tool_catalog.get(ai_tool, {})
+                if ai_tool_info:
+                    st.caption(f"📋 {ai_tool_info.get('description', '')}")
+
                 with st.form("llm_form"):
                     ai_name = st.text_input("규칙명 *", placeholder="예: 특정 공정만 WIP 높으면 이상")
-
-                    # 도구 선택
-                    ai_tool = st.selectbox(
-                        "데이터 도구 *",
-                        options=list(tool_opts.keys()),
-                        format_func=lambda x: tool_opts.get(x, x),
-                        key="ai_tool",
-                    )
-
-                    ai_tool_info = tool_catalog.get(ai_tool, {})
-                    if ai_tool_info:
-                        st.caption(f"📋 {ai_tool_info.get('description', '')}")
 
                     # 자연어 조건
                     ai_prompt = st.text_area(

@@ -9,7 +9,6 @@ from typing import Any
 
 from agent.agent_loop import run_agent_loop
 from agent.prompts import DETECTION_SYSTEM
-from config import settings
 from db import queries
 
 logger = logging.getLogger(__name__)
@@ -89,21 +88,6 @@ async def _build_user_message(
     measured_value: float,
     query_result: list[dict[str, Any]],
 ) -> str:
-    # RAG 전문지식 검색 (lazy import — pymilvus 없어도 동작)
-    rag_context = ""
-    if settings.rag.enabled:
-        try:
-            from rag.retriever import retrieve_context, build_search_query
-            search_query = build_search_query(rule, f"측정값 {measured_value}")
-            rag_context = await retrieve_context(
-                query=search_query,
-                category=rule.get("category"),
-                top_k=settings.rag.top_k,
-                min_score=settings.rag.min_score,
-            )
-        except Exception:
-            logger.warning("RAG retrieval failed for rule=%s, proceeding without", rule["rule_name"])
-
     return f"""## 규칙 위반 감지
 
 **규칙**: {rule['rule_name']}
@@ -120,9 +104,6 @@ async def _build_user_message(
 
 {rule.get('llm_prompt', '')}
 
-{rag_context}
-
 위 데이터를 분석하여 실제 이상 여부를 판단하세요.
-전문지식이 있다면 참고하여 더 정확한 판단을 내리세요.
 필요시 도구를 사용하여 추가 데이터를 조회하세요.
 """

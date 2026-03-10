@@ -40,21 +40,6 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Rule sync failed")
 
-    # RAG 지식베이스 초기화 (lazy import)
-    if settings.rag.enabled:
-        try:
-            from rag.store import init_store
-            from rag.loader import load_knowledge
-            init_store(uri=settings.rag.milvus_uri, dim=settings.rag.embedding_dim)
-            count = await load_knowledge(
-                milvus_uri=settings.rag.milvus_uri,
-                dim=settings.rag.embedding_dim,
-            )
-            logger.info("RAG knowledge loaded: %d chunks", count)
-        except Exception:
-            logger.exception("RAG initialization failed, continuing without RAG")
-            settings.rag.enabled = False
-
     # 스케줄러 설정 — 이상감지 사이클만
     interval = settings.scheduler.detection_interval_sec
     scheduler.add_job(
