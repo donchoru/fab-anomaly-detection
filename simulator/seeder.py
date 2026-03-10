@@ -34,7 +34,6 @@ def seed_all() -> None:
     _seed_transfer_logs(conn)
     _seed_wip_snapshots(conn)
     _seed_equipment_history(conn)
-    _seed_sample_rules(conn)
 
     conn.commit()
     logger.info("MES dummy data seeded successfully")
@@ -178,80 +177,3 @@ def _seed_equipment_history(conn):
                 (eq[0], eq[1], eq[2], status, dur, t),
             )
 
-
-
-def _seed_sample_rules(conn):
-    """샘플 감지 규칙 5개."""
-    rules = [
-        {
-            "name": "컨베이어 부하율 과부하",
-            "category": "logistics",
-            "sub": "conveyor",
-            "sql": "SELECT zone_id, line_id, carrier_count, capacity, ROUND(CAST(carrier_count AS REAL) / NULLIF(capacity, 0) * 100, 1) AS load_pct FROM mes_conveyor_status ORDER BY load_pct DESC LIMIT 1",
-            "type": "threshold",
-            "op": ">",
-            "warn": 85,
-            "crit": 95,
-            "llm": 1,
-            "prompt": "컨베이어 부하율이 높습니다. 해당 존의 반송 이력과 병목 여부를 확인하세요.",
-        },
-        {
-            "name": "설비 비계획정지 발생",
-            "category": "equipment",
-            "sub": "unscheduled_down",
-            "sql": "SELECT COUNT(*) AS down_count FROM mes_down_history WHERE down_type = 'UNSCHEDULED' AND start_time >= datetime('now', 'localtime', '-1 hour')",
-            "type": "threshold",
-            "op": ">",
-            "warn": 0,
-            "crit": 2,
-            "llm": 1,
-            "prompt": "비계획정지가 발생했습니다. 해당 설비의 알람 이력과 관련 WIP 영향을 확인하세요.",
-        },
-        {
-            "name": "WIP 목표 초과",
-            "category": "wip",
-            "sub": "level",
-            "sql": "SELECT process, step_id, step_name, current_wip, target_wip, ROUND(CAST(current_wip AS REAL) / NULLIF(target_wip, 0) * 100, 1) AS wip_ratio_pct FROM mes_wip_summary ORDER BY wip_ratio_pct DESC LIMIT 1",
-            "type": "threshold",
-            "op": ">",
-            "warn": 130,
-            "crit": 160,
-            "llm": 1,
-            "prompt": "WIP가 목표를 크게 초과했습니다. 흐름 밸런스와 설비 상태를 확인하세요.",
-        },
-        {
-            "name": "에이징 LOT 발생",
-            "category": "wip",
-            "sub": "aging",
-            "sql": "SELECT COUNT(*) AS aging_count FROM mes_lot_status WHERE (julianday('now', 'localtime') - julianday(step_in_time)) * 24 > 24",
-            "type": "threshold",
-            "op": ">",
-            "warn": 3,
-            "crit": 10,
-            "llm": 0,
-            "prompt": "",
-        },
-        {
-            "name": "AGV 가동률 저하",
-            "category": "logistics",
-            "sub": "vehicle",
-            "sql": "SELECT ROUND(CAST(SUM(CASE WHEN status = 'ERROR' THEN 1 ELSE 0 END) AS REAL) / NULLIF(COUNT(*), 0) * 100, 1) AS error_pct FROM mes_vehicle_status WHERE vehicle_type = 'AGV'",
-            "type": "threshold",
-            "op": ">",
-            "warn": 15,
-            "crit": 30,
-            "llm": 0,
-            "prompt": "",
-        },
-    ]
-
-    for r in rules:
-        conn.execute(
-            """INSERT INTO detection_rules
-               (rule_name, category, subcategory, query_template, check_type, threshold_op,
-                warning_value, critical_value, llm_enabled, llm_prompt, enabled)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
-            (r["name"], r["category"], r["sub"], r["sql"], r["type"], r["op"],
-             r["warn"], r["crit"], r["llm"], r["prompt"]),
-        )
-    logger.info("Seeded %d sample rules", len(rules))

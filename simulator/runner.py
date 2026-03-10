@@ -58,6 +58,11 @@ def main():
     from simulator.seeder import seed_all
     seed_all()
 
+    # 4. rules.yaml → DB 동기화
+    from rules.loader import sync_to_sqlite
+    rule_count = sync_to_sqlite(conn)
+    logger.info("Rules synced from YAML: %d", rule_count)
+
     # 4. config 설정 변경
     from config import settings
     settings.scheduler.detection_interval_sec = args.interval

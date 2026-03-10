@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from db import queries
 from db.oracle import execute
+from rules.loader import sync_db_to_yaml
 from rules.models import RuleCreate, RuleUpdate
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ async def create_rule(body: RuleCreate):
     if "enabled" in data:
         data["enabled"] = 1 if data["enabled"] else 0
     rule_id = await queries.create_rule(data)
+    await sync_db_to_yaml()
     return {"rule_id": rule_id}
 
 
@@ -52,6 +54,7 @@ async def update_rule(rule_id: int, body: RuleUpdate):
     updated = await queries.update_rule(rule_id, data)
     if not updated:
         raise HTTPException(404, "Rule not found")
+    await sync_db_to_yaml()
     return {"updated": updated}
 
 
@@ -60,6 +63,7 @@ async def delete_rule(rule_id: int):
     deleted = await queries.delete_rule(rule_id)
     if not deleted:
         raise HTTPException(404, "Rule not found")
+    await sync_db_to_yaml()
     return {"deleted": deleted}
 
 

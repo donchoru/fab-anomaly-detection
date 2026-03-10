@@ -216,7 +216,7 @@ except Exception:
 # ── 인증 ──
 
 if "role" not in st.session_state:
-    st.session_state.role = "viewer"
+    st.session_state.role = "admin"
 
 
 def _is_admin() -> bool:

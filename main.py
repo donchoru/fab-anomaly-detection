@@ -32,6 +32,14 @@ async def lifespan(app: FastAPI):
     logger.info("FAB 이상감지 시스템 starting up...")
     await init_pool()
 
+    # rules.yaml → DB 동기화
+    from rules.loader import sync_to_db
+    try:
+        count = await sync_to_db()
+        logger.info("Rules synced from YAML: %d", count)
+    except Exception:
+        logger.exception("Rule sync failed")
+
     # RAG 지식베이스 초기화 (lazy import)
     if settings.rag.enabled:
         try:

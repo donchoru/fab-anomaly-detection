@@ -20,15 +20,23 @@ Detection Scheduler (매 5분)
 - **알림**: alert/router.py 참고. DB 기록 → 외부 채널 연동.
 - **에스컬레이션**: alert/escalation.py 참고.
 
+## 규칙 관리 — YAML 기반
+- **`rules.yaml`이 규칙의 원본** (source of truth)
+- 서버 시작 시: `rules.yaml` → DB 자동 동기화 (`rules/loader.py`)
+- UI에서 규칙 추가/수정/삭제 → DB 변경 → `rules.yaml` 자동 갱신
+- 시뮬레이터도 `rules.yaml`에서 규칙 로드
+
 ## 핵심 파일
 | 파일 | 역할 |
 |------|------|
+| `rules.yaml` | **규칙 원본** — 이상감지 규칙 정의 |
+| `rules/loader.py` | YAML ↔ DB 동기화 |
 | `main.py` | FastAPI + APScheduler 진입점 |
 | `agent/detection_agent.py` | 이상감지 (ReAct) → DB INSERT |
 | `detection/evaluator.py` | 규칙 평가 → 에이전트 호출 |
 | `detection/scheduler.py` | 감지 사이클 오케스트레이션 |
 | `rules/engine.py` | threshold/delta/absence/llm 평가 |
-| `api/rules.py` | 규칙 CRUD + AI 자연어 생성 |
+| `api/rules.py` | 규칙 CRUD + AI 자연어 생성 + YAML 동기화 |
 | `db/queries.py` | 모든 DB 쿼리 |
 | `streamlit_app/app.py` | 4페이지 대시보드 |
 | `simulator/runner.py` | SQLite 시뮬레이터 |

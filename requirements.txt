@@ -5,6 +5,7 @@ oracledb==2.5.1
 apscheduler==3.11.0
 pydantic==2.10.4
 python-dotenv==1.0.1
+pyyaml>=6.0
 pymilvus==2.4.9
 streamlit>=1.41.0
 streamlit-autorefresh>=1.0.1
