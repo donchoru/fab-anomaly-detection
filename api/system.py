@@ -16,7 +16,7 @@ router = APIRouter(tags=["system"])
 @router.get("/health")
 async def health():
     try:
-        rows = await execute("SELECT 1 AS ok FROM DUAL")
+        rows = await execute("SELECT 1 AS ok")
         db_ok = bool(rows)
     except Exception:
         db_ok = False

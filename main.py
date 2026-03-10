@@ -87,6 +87,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
 # API 라우터 등록
 from api.rules import router as rules_router
 from api.anomalies import router as anomalies_router

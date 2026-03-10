@@ -1,4 +1,8 @@
-"""Oracle DB async connection pool (oracledb thin mode)."""
+"""Oracle DB async connection pool (oracledb thin mode).
+
+oracledb는 lazy import — 시뮬레이터에서 SQLite로 monkey-patch할 때
+oracledb 미설치 환경에서도 임포트 가능.
+"""
 
 from __future__ import annotations
 
@@ -6,16 +10,15 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator
 
-import oracledb
-
 from config import settings
 
 logger = logging.getLogger(__name__)
 
-_pool: oracledb.AsyncConnectionPool | None = None
+_pool = None
 
 
 async def init_pool() -> None:
+    import oracledb
     global _pool
     cfg = settings.oracle
     _pool = oracledb.create_pool_async(
@@ -37,7 +40,7 @@ async def close_pool() -> None:
 
 
 @asynccontextmanager
-async def get_connection() -> AsyncGenerator[oracledb.AsyncConnection, None]:
+async def get_connection() -> AsyncGenerator:
     if _pool is None:
         raise RuntimeError("Oracle pool not initialized. Call init_pool() first.")
     async with _pool.acquire() as conn:
@@ -67,6 +70,7 @@ async def execute_returning(
     sql: str, params: dict[str, Any] | None = None, returning_col: str = "rule_id"
 ) -> Any:
     """Execute INSERT ... RETURNING id INTO :out_id."""
+    import oracledb
     async with get_connection() as conn:
         async with conn.cursor() as cur:
             out_var = cur.var(oracledb.NUMBER)

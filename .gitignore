@@ -6,3 +6,4 @@ __pycache__/
 wheels/
 .idea/
 .vscode/
+*.db
