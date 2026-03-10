@@ -1,4 +1,4 @@
-"""FAB-SENTINEL 환경 설정."""
+"""FAB 이상감지 시스템 환경 설정."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ load_dotenv()
 
 @dataclass
 class OracleConfig:
-    user: str = field(default_factory=lambda: os.getenv("ORACLE_USER", "sentinel"))
+    user: str = field(default_factory=lambda: os.getenv("ORACLE_USER", "fab"))
     password: str = field(default_factory=lambda: os.getenv("ORACLE_PASSWORD", ""))
     dsn: str = field(default_factory=lambda: os.getenv("ORACLE_DSN", "localhost:1521/XEPDB1"))
     min_pool: int = 2
@@ -29,21 +29,10 @@ class LLMConfig:
 
 
 @dataclass
-class AlertConfig:
-    smtp_host: str = field(default_factory=lambda: os.getenv("SMTP_HOST", ""))
-    smtp_port: int = field(default_factory=lambda: int(os.getenv("SMTP_PORT", "587")))
-    smtp_user: str = field(default_factory=lambda: os.getenv("SMTP_USER", ""))
-    smtp_password: str = field(default_factory=lambda: os.getenv("SMTP_PASSWORD", ""))
-    smtp_from: str = field(default_factory=lambda: os.getenv("SMTP_FROM", "sentinel@fab.local"))
-    messenger_webhook_url: str = field(default_factory=lambda: os.getenv("MESSENGER_WEBHOOK_URL", ""))
-
-
-@dataclass
 class SchedulerConfig:
     detection_interval_sec: int = field(
         default_factory=lambda: int(os.getenv("DETECTION_INTERVAL_SEC", "300"))
     )
-    escalation_check_sec: int = 60
 
 
 @dataclass
@@ -60,7 +49,6 @@ class RAGConfig:
 class Settings:
     oracle: OracleConfig = field(default_factory=OracleConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
-    alert: AlertConfig = field(default_factory=AlertConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     rag: RAGConfig = field(default_factory=RAGConfig)
     host: str = "0.0.0.0"

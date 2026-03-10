@@ -20,14 +20,14 @@ async def overview():
              SUM(CASE WHEN status = 'investigating' THEN 1 ELSE 0 END) AS investigating,
              SUM(CASE WHEN severity = 'critical' AND status IN ('detected','acknowledged','investigating') THEN 1 ELSE 0 END) AS active_critical,
              SUM(CASE WHEN severity = 'warning' AND status IN ('detected','acknowledged','investigating') THEN 1 ELSE 0 END) AS active_warning
-           FROM sentinel_anomalies
+           FROM anomalies
            WHERE detected_at >= SYSTIMESTAMP - INTERVAL '24' HOUR"""
     )
     overview_data = rows[0] if rows else {}
 
     # 최근 사이클 정보
     cycles = await execute(
-        """SELECT * FROM sentinel_detection_cycles
+        """SELECT * FROM detection_cycles
            ORDER BY started_at DESC FETCH NEXT 1 ROWS ONLY"""
     )
 
@@ -43,7 +43,7 @@ async def timeline(hours: int = 24):
     rows = await execute(
         """SELECT TRUNC(detected_at, 'HH24') AS hour_slot,
                   category, severity, COUNT(*) AS count
-           FROM sentinel_anomalies
+           FROM anomalies
            WHERE detected_at >= SYSTIMESTAMP - NUMTODSINTERVAL(:hours, 'HOUR')
            GROUP BY TRUNC(detected_at, 'HH24'), category, severity
            ORDER BY hour_slot""",
@@ -57,7 +57,7 @@ async def heatmap():
     """카테고리 x 심각도 히트맵."""
     rows = await execute(
         """SELECT category, severity, COUNT(*) AS count
-           FROM sentinel_anomalies
+           FROM anomalies
            WHERE detected_at >= SYSTIMESTAMP - INTERVAL '24' HOUR
              AND status IN ('detected', 'acknowledged', 'investigating')
            GROUP BY category, severity

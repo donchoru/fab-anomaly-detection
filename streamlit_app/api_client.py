@@ -1,4 +1,4 @@
-"""FAB-SENTINEL API 클라이언트 — httpx 동기."""
+"""FAB 이상감지 API 클라이언트 — httpx 동기."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import os
 
 import httpx
 
-BASE_URL = os.getenv("SENTINEL_API_URL", "http://localhost:8600")
+BASE_URL = os.getenv("API_URL", "http://localhost:8600")
 _client = httpx.Client(base_url=BASE_URL, timeout=10.0)
 
 
@@ -102,12 +102,6 @@ def get_tables() -> dict:
 
 def generate_rule(description: str) -> dict:
     return _post("/api/rules/generate", json={"description": description})
-
-
-# ── 알림 이력 ──
-
-def get_alert_history(limit: int = 100) -> list:
-    return _get("/api/alerts/history", {"limit": limit})
 
 
 # ── 수동 트리거 ──

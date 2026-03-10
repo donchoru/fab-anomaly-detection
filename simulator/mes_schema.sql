@@ -144,8 +144,8 @@ CREATE TABLE IF NOT EXISTS mes_equipment_alarms (
     acknowledged INTEGER DEFAULT 0
 );
 
--- Sentinel 테이블 (SQLite 버전)
-CREATE TABLE IF NOT EXISTS sentinel_rules (
+-- 감지 시스템 테이블 (SQLite 버전)
+CREATE TABLE IF NOT EXISTS detection_rules (
     rule_id INTEGER PRIMARY KEY AUTOINCREMENT,
     rule_name TEXT NOT NULL,
     category TEXT NOT NULL,
@@ -163,9 +163,9 @@ CREATE TABLE IF NOT EXISTS sentinel_rules (
     updated_at TEXT DEFAULT (datetime('now', 'localtime'))
 );
 
-CREATE TABLE IF NOT EXISTS sentinel_anomalies (
+CREATE TABLE IF NOT EXISTS anomalies (
     anomaly_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    rule_id INTEGER REFERENCES sentinel_rules(rule_id),
+    rule_id INTEGER REFERENCES detection_rules(rule_id),
     correlation_id INTEGER,
     category TEXT NOT NULL,
     severity TEXT NOT NULL,
@@ -176,7 +176,6 @@ CREATE TABLE IF NOT EXISTS sentinel_anomalies (
     affected_entity TEXT,
     llm_analysis TEXT,
     llm_suggestion TEXT,
-    rca_status TEXT DEFAULT 'pending',
     status TEXT DEFAULT 'detected',
     detected_at TEXT DEFAULT (datetime('now', 'localtime')),
     acknowledged_at TEXT,
@@ -185,7 +184,7 @@ CREATE TABLE IF NOT EXISTS sentinel_anomalies (
     notes TEXT
 );
 
-CREATE TABLE IF NOT EXISTS sentinel_correlations (
+CREATE TABLE IF NOT EXISTS correlations (
     correlation_id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT,
     anomaly_count INTEGER DEFAULT 0,
@@ -195,28 +194,7 @@ CREATE TABLE IF NOT EXISTS sentinel_correlations (
     updated_at TEXT DEFAULT (datetime('now', 'localtime'))
 );
 
-CREATE TABLE IF NOT EXISTS sentinel_alert_history (
-    alert_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    anomaly_id INTEGER REFERENCES sentinel_anomalies(anomaly_id),
-    channel TEXT NOT NULL,
-    recipient TEXT,
-    message TEXT,
-    sent_at TEXT DEFAULT (datetime('now', 'localtime')),
-    delivered INTEGER DEFAULT 0,
-    error_msg TEXT
-);
-
-CREATE TABLE IF NOT EXISTS sentinel_alert_routes (
-    route_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    category TEXT,
-    severity_min TEXT DEFAULT 'warning',
-    channel TEXT NOT NULL,
-    recipient TEXT,
-    escalation_delay_min INTEGER DEFAULT 0,
-    enabled INTEGER DEFAULT 1
-);
-
-CREATE TABLE IF NOT EXISTS sentinel_detection_cycles (
+CREATE TABLE IF NOT EXISTS detection_cycles (
     cycle_id INTEGER PRIMARY KEY AUTOINCREMENT,
     started_at TEXT DEFAULT (datetime('now', 'localtime')),
     completed_at TEXT,

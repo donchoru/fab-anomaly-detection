@@ -49,7 +49,6 @@ async def analyze_and_save(
         "measured_value": measured_value,
         "threshold_value": threshold_value,
         "affected_entity": result.get("affected_entity", ""),
-        "rca_status": "pending",
     }
 
     anomaly_id = await queries.insert_anomaly(anomaly_data)
@@ -77,7 +76,6 @@ async def analyze_without_llm(
         "measured_value": measured_value,
         "threshold_value": threshold_value,
         "affected_entity": "",
-        "rca_status": "pending",
     }
 
     anomaly_id = await queries.insert_anomaly(anomaly_data)

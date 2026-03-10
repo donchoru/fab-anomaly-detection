@@ -24,7 +24,7 @@ async def analyze_correlations() -> list[dict[str, Any]]:
     """
     # 아직 상관 그룹에 속하지 않은 활성 이상 조회
     uncorrelated = await execute(
-        """SELECT * FROM sentinel_anomalies
+        """SELECT * FROM anomalies
            WHERE correlation_id IS NULL
              AND status IN ('detected', 'acknowledged', 'investigating')
              AND detected_at >= SYSTIMESTAMP - INTERVAL '1' HOUR

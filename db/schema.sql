@@ -1,7 +1,7 @@
--- FAB-SENTINEL Oracle DDL
+-- FAB 이상감지 시스템 Oracle DDL
 
 -- 1. 감지 규칙
-CREATE TABLE sentinel_rules (
+CREATE TABLE detection_rules (
     rule_id        NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     rule_name      VARCHAR2(200)  NOT NULL,
     category       VARCHAR2(50)   NOT NULL,   -- logistics / wip / equipment
@@ -21,9 +21,9 @@ CREATE TABLE sentinel_rules (
 );
 
 -- 2. 감지된 이상
-CREATE TABLE sentinel_anomalies (
+CREATE TABLE anomalies (
     anomaly_id      NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    rule_id         NUMBER         REFERENCES sentinel_rules(rule_id),
+    rule_id         NUMBER         REFERENCES detection_rules(rule_id),
     correlation_id  NUMBER,
     category        VARCHAR2(50)   NOT NULL,
     severity        VARCHAR2(20)   NOT NULL,   -- warning / critical
@@ -34,8 +34,6 @@ CREATE TABLE sentinel_anomalies (
     affected_entity VARCHAR2(200), -- equipment_id, zone, line
     llm_analysis    CLOB,
     llm_suggestion  CLOB,
-    rca_status      VARCHAR2(20)   DEFAULT 'pending',
-                    -- pending / processing / done / failed
     status          VARCHAR2(30)   DEFAULT 'detected',
                     -- detected / acknowledged / investigating / resolved / false_positive
     detected_at     TIMESTAMP      DEFAULT SYSTIMESTAMP,
@@ -45,14 +43,13 @@ CREATE TABLE sentinel_anomalies (
     notes           CLOB
 );
 
-CREATE INDEX idx_anomalies_status ON sentinel_anomalies(status);
-CREATE INDEX idx_anomalies_rca_status ON sentinel_anomalies(rca_status);
-CREATE INDEX idx_anomalies_detected ON sentinel_anomalies(detected_at);
-CREATE INDEX idx_anomalies_rule ON sentinel_anomalies(rule_id);
-CREATE INDEX idx_anomalies_correlation ON sentinel_anomalies(correlation_id);
+CREATE INDEX idx_anomalies_status ON anomalies(status);
+CREATE INDEX idx_anomalies_detected ON anomalies(detected_at);
+CREATE INDEX idx_anomalies_rule ON anomalies(rule_id);
+CREATE INDEX idx_anomalies_correlation ON anomalies(correlation_id);
 
 -- 3. 상관 그룹
-CREATE TABLE sentinel_correlations (
+CREATE TABLE correlations (
     correlation_id   NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     title            VARCHAR2(500),
     anomaly_count    NUMBER         DEFAULT 0,
@@ -62,37 +59,12 @@ CREATE TABLE sentinel_correlations (
     updated_at       TIMESTAMP      DEFAULT SYSTIMESTAMP
 );
 
-ALTER TABLE sentinel_anomalies
+ALTER TABLE anomalies
     ADD CONSTRAINT fk_anomaly_correlation
-    FOREIGN KEY (correlation_id) REFERENCES sentinel_correlations(correlation_id);
+    FOREIGN KEY (correlation_id) REFERENCES correlations(correlation_id);
 
--- 4. 알림 이력
-CREATE TABLE sentinel_alert_history (
-    alert_id    NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    anomaly_id  NUMBER         REFERENCES sentinel_anomalies(anomaly_id),
-    channel     VARCHAR2(50)   NOT NULL,  -- dashboard
-    recipient   VARCHAR2(200),
-    message     CLOB,
-    sent_at     TIMESTAMP      DEFAULT SYSTIMESTAMP,
-    delivered   NUMBER(1)      DEFAULT 0,
-    error_msg   VARCHAR2(500)
-);
-
-CREATE INDEX idx_alerts_anomaly ON sentinel_alert_history(anomaly_id);
-
--- 5. 알림 라우팅 설정
-CREATE TABLE sentinel_alert_routes (
-    route_id             NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    category             VARCHAR2(50),   -- NULL = 전체
-    severity_min         VARCHAR2(20)    DEFAULT 'warning',
-    channel              VARCHAR2(50)    NOT NULL,
-    recipient            VARCHAR2(200),
-    escalation_delay_min NUMBER          DEFAULT 0,
-    enabled              NUMBER(1)       DEFAULT 1
-);
-
--- 6. 감지 사이클 로그
-CREATE TABLE sentinel_detection_cycles (
+-- 4. 감지 사이클 로그
+CREATE TABLE detection_cycles (
     cycle_id        NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     started_at      TIMESTAMP      NOT NULL,
     completed_at    TIMESTAMP,

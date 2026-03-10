@@ -33,7 +33,7 @@ async def transition(
     # anomaly 조회
     from db.oracle import execute
     rows = await execute(
-        "SELECT status FROM sentinel_anomalies WHERE anomaly_id = :id",
+        "SELECT status FROM anomalies WHERE anomaly_id = :id",
         {"id": anomaly_id},
     )
     if not rows:

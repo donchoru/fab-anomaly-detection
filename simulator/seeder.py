@@ -34,7 +34,6 @@ def seed_all() -> None:
     _seed_transfer_logs(conn)
     _seed_wip_snapshots(conn)
     _seed_equipment_history(conn)
-    _seed_alert_routes(conn)
     _seed_sample_rules(conn)
 
     conn.commit()
@@ -180,15 +179,6 @@ def _seed_equipment_history(conn):
             )
 
 
-def _seed_alert_routes(conn):
-    """기본 알림 라우팅."""
-    conn.execute(
-        "INSERT INTO sentinel_alert_routes (category, severity_min, channel, recipient, enabled) VALUES (NULL, 'warning', 'dashboard', '', 1)"
-    )
-    conn.execute(
-        "INSERT INTO sentinel_alert_routes (category, severity_min, channel, recipient, escalation_delay_min, enabled) VALUES (NULL, 'critical', 'dashboard', '', 5, 1)"
-    )
-
 
 def _seed_sample_rules(conn):
     """샘플 감지 규칙 5개."""
@@ -257,7 +247,7 @@ def _seed_sample_rules(conn):
 
     for r in rules:
         conn.execute(
-            """INSERT INTO sentinel_rules
+            """INSERT INTO detection_rules
                (rule_name, category, subcategory, query_template, check_type, threshold_op,
                 warning_value, critical_value, llm_enabled, llm_prompt, enabled)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",

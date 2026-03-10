@@ -6,8 +6,6 @@ from fastapi import APIRouter
 
 from config import settings
 from detection.scheduler import run_detection_cycle
-from correlation.engine import analyze_correlations
-from alert.escalation import check_escalations
 from db.oracle import execute
 
 router = APIRouter(tags=["system"])
@@ -34,31 +32,17 @@ async def trigger_detection():
     return result
 
 
-@router.post("/api/correlations/analyze")
-async def trigger_correlation():
-    """상관관계 분석 수동 트리거."""
-    groups = await analyze_correlations()
-    return {"correlation_groups": groups}
-
-
-@router.post("/api/escalations/check")
-async def trigger_escalation():
-    """에스컬레이션 수동 트리거."""
-    count = await check_escalations()
-    return {"escalated": count}
-
-
 @router.get("/api/stats")
 async def stats():
     """시스템 통계."""
-    rules = await execute("SELECT COUNT(*) AS cnt FROM sentinel_rules WHERE enabled = 1")
+    rules = await execute("SELECT COUNT(*) AS cnt FROM detection_rules WHERE enabled = 1")
     anomalies_24h = await execute(
-        """SELECT COUNT(*) AS cnt FROM sentinel_anomalies
+        """SELECT COUNT(*) AS cnt FROM anomalies
            WHERE detected_at >= SYSTIMESTAMP - INTERVAL '24' HOUR"""
     )
     cycles_24h = await execute(
         """SELECT COUNT(*) AS cnt, AVG(duration_ms) AS avg_ms
-           FROM sentinel_detection_cycles
+           FROM detection_cycles
            WHERE started_at >= SYSTIMESTAMP - INTERVAL '24' HOUR"""
     )
 

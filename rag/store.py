@@ -16,7 +16,7 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
-COLLECTION = "sentinel_knowledge"
+COLLECTION = "fab_knowledge"
 DIM = 1024  # 임베딩 차원 (모델에 따라 조정)
 
 _client: MilvusClient | None = None

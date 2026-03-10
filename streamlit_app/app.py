@@ -1,4 +1,4 @@
-"""FAB-SENTINEL Streamlit 대시보드."""
+"""FAB 이상감지 대시보드."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from streamlit_autorefresh import st_autorefresh
 import api_client as api
 
 st.set_page_config(
-    page_title="FAB-SENTINEL",
+    page_title="FAB 이상감지",
     page_icon="🏭",
     layout="wide",
 )
@@ -225,8 +225,8 @@ def _is_admin() -> bool:
 
 # ── 사이드바 ──
 
-st.sidebar.title("FAB-SENTINEL")
-st.sidebar.caption("반도체 공정 AI 이상감지")
+st.sidebar.title("FAB 이상감지")
+st.sidebar.caption("반도체 공정 AI 이상감지 시스템")
 
 if _is_admin():
     st.sidebar.markdown(f'{badge("ADMIN", "done")}', unsafe_allow_html=True)
@@ -247,7 +247,7 @@ st.sidebar.divider()
 
 page = st.sidebar.radio(
     "페이지",
-    ["대시보드", "이상 목록", "규칙 관리", "처리 로그"],
+    ["대시보드", "이상 목록", "규칙 관리", "감지 로그"],
 )
 
 st.sidebar.divider()
@@ -398,7 +398,6 @@ elif page == "이상 목록":
                 "제목": (a.get("title") or "")[:50],
                 "카테고리": a.get("category", ""),
                 "상태": a.get("status", ""),
-                "RCA": a.get("rca_status", ""),
                 "감지시각": str(a.get("detected_at", ""))[:19],
             }
             for a in anomalies
@@ -422,10 +421,9 @@ elif page == "이상 목록":
             a = anomalies[idx]
             sev = a.get("severity", "warning")
             status_val = a.get("status", "detected")
-            rca_val = a.get("rca_status", "pending")
 
             # 상세 카드
-            badges_html = f'{badge(sev.upper(), sev)} {badge(status_val, status_val)} {badge("RCA:" + rca_val, rca_val)}'
+            badges_html = f'{badge(sev.upper(), sev)} {badge(status_val, status_val)}'
             detail_html = f"""
             <div class="detail-card">
                 <div style="margin-bottom:12px">{badges_html}</div>
@@ -907,34 +905,36 @@ elif page == "규칙 관리":
 # 페이지 4: 처리 로그
 # ══════════════════════════════════════════
 
-elif page == "처리 로그":
+elif page == "감지 로그":
     st_autorefresh(interval=10_000, key="log_refresh")
-    section_header("📋", "처리 로그")
+    section_header("📋", "감지 로그")
 
-    tab1, tab2, tab3 = st.tabs(["🔄 감지 사이클", "🤖 RCA 이력", "📨 알림 이력"])
+    try:
+        overview = api.get_overview()
+        last_cycle = overview.get("last_cycle")
+        if last_cycle:
+            section_header("🔄", "마지막 감지 사이클")
+            st.dataframe(
+                pd.DataFrame([last_cycle]),
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.info("감지 사이클 이력이 없습니다.")
+    except Exception as e:
+        st.error(f"조회 실패: {e}")
 
-    with tab1:
-        try:
-            overview = api.get_overview()
-            last_cycle = overview.get("last_cycle")
-            if last_cycle:
-                st.dataframe(
-                    pd.DataFrame([last_cycle]),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-            else:
-                st.info("감지 사이클 이력이 없습니다.")
-        except Exception as e:
-            st.error(f"조회 실패: {e}")
+    st.markdown("<br>", unsafe_allow_html=True)
 
-    with tab2:
-        try:
-            anomalies = api.get_anomalies(limit=50)
-            for rca_status in ["processing", "done", "failed", "pending"]:
-                filtered = [a for a in anomalies if a.get("rca_status") == rca_status]
+    # 최근 감지된 이상 목록
+    section_header("📊", "최근 감지 이력")
+    try:
+        anomalies = api.get_anomalies(limit=50)
+        if anomalies:
+            for status_val in ["detected", "acknowledged", "investigating", "resolved"]:
+                filtered = [a for a in anomalies if a.get("status") == status_val]
                 if filtered:
-                    st.markdown(f'{badge(rca_status.upper() + f" ({len(filtered)})", rca_status)}', unsafe_allow_html=True)
+                    st.markdown(f'{badge(status_val.upper() + f" ({len(filtered)})", status_val)}', unsafe_allow_html=True)
                     df = pd.DataFrame([
                         {
                             "ID": a.get("anomaly_id"),
@@ -946,36 +946,7 @@ elif page == "처리 로그":
                     ])
                     st.dataframe(df, use_container_width=True, hide_index=True)
                     st.markdown("<br>", unsafe_allow_html=True)
-        except Exception as e:
-            st.error(f"조회 실패: {e}")
-
-    with tab3:
-        try:
-            alerts = api.get_alert_history(limit=50)
-            if alerts:
-                df = pd.DataFrame([
-                    {
-                        "ID": a.get("alert_id"),
-                        "이상 ID": a.get("anomaly_id"),
-                        "채널": a.get("channel", ""),
-                        "발송시각": str(a.get("sent_at", ""))[:19],
-                        "성공": "Y" if a.get("delivered") else "N",
-                    }
-                    for a in alerts
-                ])
-                st.dataframe(df, use_container_width=True, hide_index=True)
-
-                st.markdown("---")
-                alert_id = st.selectbox(
-                    "알림 메시지 보기",
-                    [a.get("alert_id") for a in alerts],
-                    format_func=lambda x: f"Alert #{x}",
-                )
-                if alert_id:
-                    sel = next((a for a in alerts if a.get("alert_id") == alert_id), None)
-                    if sel and sel.get("message"):
-                        st.markdown(f'<div class="detail-card">{sel["message"]}</div>', unsafe_allow_html=True)
-            else:
-                st.info("알림 이력이 없습니다.")
-        except Exception as e:
-            st.error(f"조회 실패: {e}")
+        else:
+            st.info("감지된 이상이 없습니다.")
+    except Exception as e:
+        st.error(f"조회 실패: {e}")
