@@ -15,7 +15,9 @@ from typing import Any
 from agent.agent_loop import run_agent_loop
 from agent.prompts import DETECTION_SYSTEM
 from bus.topic import bus, TOPIC_ANOMALY_DETECTED
+from config import settings
 from db import queries
+from rag.retriever import retrieve_context, build_search_query
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +28,7 @@ async def analyze_and_publish(
     query_result: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
     """LLM으로 이상 분석 후 토픽에 발행."""
-    user_msg = _build_user_message(rule, measured_value, query_result)
+    user_msg = await _build_user_message(rule, measured_value, query_result)
 
     result = await run_agent_loop(
         system_prompt=DETECTION_SYSTEM,
@@ -195,11 +197,25 @@ def _summarize_evidence(query_result: list[dict[str, Any]], max_items: int = 5) 
     return summaries
 
 
-def _build_user_message(
+async def _build_user_message(
     rule: dict[str, Any],
     measured_value: float,
     query_result: list[dict[str, Any]],
 ) -> str:
+    # RAG 전문지식 검색
+    rag_context = ""
+    if settings.rag.enabled:
+        try:
+            search_query = build_search_query(rule, f"측정값 {measured_value}")
+            rag_context = await retrieve_context(
+                query=search_query,
+                category=rule.get("category"),
+                top_k=settings.rag.top_k,
+                min_score=settings.rag.min_score,
+            )
+        except Exception:
+            logger.warning("RAG retrieval failed for rule=%s, proceeding without", rule["rule_name"])
+
     return f"""## 규칙 위반 감지
 
 **규칙**: {rule['rule_name']}
@@ -216,6 +232,9 @@ def _build_user_message(
 
 {rule.get('llm_prompt', '')}
 
+{rag_context}
+
 위 데이터를 분석하여 실제 이상 여부를 판단하세요.
+전문지식이 있다면 참고하여 더 정확한 판단을 내리세요.
 필요시 도구를 사용하여 추가 데이터를 조회하세요.
 """

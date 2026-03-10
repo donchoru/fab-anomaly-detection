@@ -83,6 +83,21 @@ def main():
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # RAG 지식베이스 초기화 (Milvus 없으면 자동 비활성화)
+        if settings.rag.enabled:
+            try:
+                from rag.store import init_store
+                from rag.loader import load_knowledge
+                init_store(uri=settings.rag.milvus_uri, dim=settings.rag.embedding_dim)
+                rag_count = await load_knowledge(
+                    milvus_uri=settings.rag.milvus_uri,
+                    dim=settings.rag.embedding_dim,
+                )
+                logger.info("RAG knowledge loaded: %d chunks", rag_count)
+            except Exception:
+                logger.warning("RAG init failed (Milvus not available?), continuing without RAG")
+                settings.rag.enabled = False
+
         await bus.start()
         register_rca()
         register_alert_router()

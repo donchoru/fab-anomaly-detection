@@ -13,6 +13,8 @@ from db.oracle import init_pool, close_pool
 from bus.topic import bus
 from agent.rca_agent import register as register_rca
 from alert.router import register as register_alert_router
+from rag.loader import load_knowledge
+from rag.store import init_store
 from alert.dashboard import register_ws, unregister_ws
 from detection.scheduler import run_detection_cycle
 from correlation.engine import analyze_correlations
@@ -37,6 +39,19 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("FAB-SENTINEL starting up...")
     await init_pool()
+
+    # RAG 지식베이스 초기화
+    if settings.rag.enabled:
+        try:
+            init_store(uri=settings.rag.milvus_uri, dim=settings.rag.embedding_dim)
+            count = await load_knowledge(
+                milvus_uri=settings.rag.milvus_uri,
+                dim=settings.rag.embedding_dim,
+            )
+            logger.info("RAG knowledge loaded: %d chunks", count)
+        except Exception:
+            logger.exception("RAG initialization failed, continuing without RAG")
+            settings.rag.enabled = False
 
     # 토픽 버스 시작
     await bus.start()

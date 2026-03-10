@@ -14,7 +14,9 @@ from typing import Any
 from agent.agent_loop import run_agent_loop
 from agent.prompts import RCA_SYSTEM
 from bus.topic import Message, bus, TOPIC_ANOMALY_DETECTED, TOPIC_RCA_COMPLETED, TOPIC_ALERT_REQUEST
+from config import settings
 from db import queries
+from rag.retriever import retrieve_context, build_search_query
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +137,7 @@ async def handle_anomaly(msg: Message) -> None:
 
 async def _run_rca(payload: dict[str, Any]) -> dict[str, Any]:
     """ReAct 루프로 근본원인 분석."""
-    user_msg = _build_rca_message(payload)
+    user_msg = await _build_rca_message(payload)
     return await run_agent_loop(
         system_prompt=RCA_SYSTEM,
         user_message=user_msg,
@@ -143,10 +145,31 @@ async def _run_rca(payload: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _build_rca_message(payload: dict[str, Any]) -> str:
+async def _build_rca_message(payload: dict[str, Any]) -> str:
     detection = payload.get("detection", {})
     threshold = detection.get("threshold", {})
     evidence = payload.get("evidence_summary", [])
+
+    # RAG 전문지식 검색
+    rag_context = ""
+    if settings.rag.enabled:
+        try:
+            search_query = build_search_query(
+                {
+                    "rule_name": detection.get("rule_name", ""),
+                    "category": payload.get("category", ""),
+                    "subcategory": payload.get("subcategory", ""),
+                },
+                payload.get("analysis", ""),
+            )
+            rag_context = await retrieve_context(
+                query=search_query,
+                category=payload.get("category"),
+                top_k=settings.rag.top_k,
+                min_score=settings.rag.min_score,
+            )
+        except Exception:
+            logger.warning("RAG retrieval failed for anomaly_id=%d, proceeding without", payload.get("anomaly_id", 0))
 
     return f"""## 이상 감지 — 근본원인 분석 요청
 
@@ -169,7 +192,10 @@ def _build_rca_message(payload: dict[str, Any]) -> str:
 ### 근거 데이터 요약
 {chr(10).join(f'- {e}' for e in evidence) if evidence else '(없음)'}
 
+{rag_context}
+
 위 이상의 근본 원인을 분석하세요.
+전문지식이 있다면 유사 사례와 알려진 원인 패턴을 참고하세요.
 제공된 도구로 관련 설비/공정/물류 데이터를 추가 조회하여
 원인을 좁혀가세요.
 """

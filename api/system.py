@@ -5,10 +5,13 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from bus.topic import bus
+from config import settings
 from detection.scheduler import run_detection_cycle
 from correlation.engine import analyze_correlations
 from alert.escalation import check_escalations
 from db.oracle import execute
+from rag.loader import load_knowledge
+from rag.store import init_store
 
 router = APIRouter(tags=["system"])
 
@@ -84,3 +87,40 @@ async def bus_metrics():
 async def bus_messages(limit: int = 50):
     """최근 처리된 메시지 목록 (최대 100건)."""
     return {"messages": bus.get_recent_messages(limit=limit)}
+
+
+# ── RAG 지식베이스 관리 ──
+
+@router.get("/api/rag/status")
+async def rag_status():
+    """RAG 상태 확인."""
+    return {
+        "enabled": settings.rag.enabled,
+        "milvus_uri": settings.rag.milvus_uri,
+        "embedding_model": settings.rag.embedding_model,
+        "embedding_dim": settings.rag.embedding_dim,
+        "top_k": settings.rag.top_k,
+        "min_score": settings.rag.min_score,
+    }
+
+
+@router.post("/api/rag/reload")
+async def rag_reload(rebuild: bool = False):
+    """RAG 지식베이스 리로드.
+
+    rebuild=true: 기존 컬렉션 삭제 후 재구축
+    rebuild=false: 기존 데이터에 추가 (중복 가능)
+    """
+    if not settings.rag.enabled:
+        return {"error": "RAG is disabled"}
+
+    try:
+        init_store(uri=settings.rag.milvus_uri, dim=settings.rag.embedding_dim)
+        count = await load_knowledge(
+            milvus_uri=settings.rag.milvus_uri,
+            dim=settings.rag.embedding_dim,
+            rebuild=rebuild,
+        )
+        return {"status": "ok", "chunks_loaded": count, "rebuild": rebuild}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
