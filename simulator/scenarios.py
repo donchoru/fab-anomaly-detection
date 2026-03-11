@@ -64,7 +64,7 @@ class ScenarioRunner:
         # 이후 주기적으로 상황 악화
         while self._running:
             await asyncio.sleep(60 / self.speed)
-            _worsen_situation()
+            worsen_situation()
 
 
 def scenario_conveyor_overload() -> None:
@@ -221,7 +221,7 @@ def scenario_agv_failure() -> None:
     logger.info("Injected: 3 AGVs → ERROR (AGV-003, 007, 011)")
 
 
-def _worsen_situation() -> None:
+def worsen_situation() -> None:
     """상황 점진적 악화 (반복 호출)."""
     conn = get_conn()
 
