@@ -74,3 +74,25 @@ rules:
     llm_enabled: true
     llm_prompt: "ERROR 상태 AGV의 비율을 확인해. 전체의 15% 이상이면 경고, 30% 이상이면 위험으로 판단해."
     enabled: true
+
+  - name: 공정간 WIP 불균형
+    category: wip
+    subcategory: wip_imbalance
+    check_type: llm
+    source_type: tool
+    tool: get_wip_levels
+    eval_interval: 300
+    llm_enabled: true
+    llm_prompt: >
+      공정별 WIP 비율(wip_ratio_pct)을 분석해서 '공정간 불균형'을 판단해.
+
+      판단 기준:
+      - 모든 공정의 wip_ratio_pct가 비슷하게 높으면 → 전체 부하 상승이므로 이상이 아님 (정상)
+      - 특정 공정(또는 스텝)만 wip_ratio_pct가 유독 높고 나머지는 정상이면 → 병목/적체 이상
+      - 구체적으로: 최고 비율과 평균 비율의 차이가 30%p 이상이면 불균형으로 판단
+      - 불균형이 감지되면 어느 공정이 병목인지, 원인 추정(설비 정지? 흐름 막힘?)을 분석해
+
+      severity 판단:
+      - 최고 비율이 150% 이상이고 불균형이면 → critical
+      - 최고 비율이 120% 이상이고 불균형이면 → warning
+    enabled: true
