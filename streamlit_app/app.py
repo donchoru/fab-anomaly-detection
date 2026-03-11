@@ -205,6 +205,25 @@ def cycle_card(value, label: str) -> str:
     return f'<div class="cycle-card"><div class="cycle-value">{value}</div><div class="cycle-label">{label}</div></div>'
 
 
+# ── 포맷 헬퍼 ──
+
+_SEV_MAP = {"critical": "🔴 위험", "warning": "🟡 경고"}
+_STATUS_MAP = {"detected": "🔴 감지됨", "in_progress": "🔧 처리중", "resolved": "✅ 해결"}
+_CHECK_MAP = {"threshold": "📊 임계치", "delta": "📈 변화율", "absence": "🚫 부재", "llm": "🤖 AI"}
+_CAT_MAP = {"logistics": "🚚 물류", "wip": "📦 재공", "equipment": "⚙️ 설비"}
+
+
+def _fmt_time(t: str | None) -> str:
+    if not t:
+        return ""
+    s = str(t)[:19]
+    # "2026-03-11 09:12:06" → "03/11 09:12"
+    try:
+        return s[5:10].replace("-", "/") + " " + s[11:16]
+    except Exception:
+        return s
+
+
 # ── 관리자 비밀번호 ──
 
 try:
@@ -394,12 +413,10 @@ elif page == "이상 목록":
         st.markdown(f"**{len(anomalies)}건**")
         df = pd.DataFrame([
             {
-                "ID": a.get("anomaly_id"),
-                "심각도": a.get("severity", ""),
-                "제목": (a.get("title") or "")[:50],
-                "카테고리": a.get("category", ""),
-                "상태": a.get("status", ""),
-                "감지시각": str(a.get("detected_at", ""))[:19],
+                "심각도": _SEV_MAP.get(a.get("severity", ""), a.get("severity", "")),
+                "제목": (a.get("title") or "")[:45],
+                "상태": _STATUS_MAP.get(a.get("status", ""), a.get("status", "")),
+                "감지": _fmt_time(a.get("detected_at")),
             }
             for a in anomalies
         ])
@@ -411,6 +428,12 @@ elif page == "이상 목록":
             selection_mode="single-row",
             on_select="rerun",
             key="anomaly_table",
+            column_config={
+                "심각도": st.column_config.TextColumn(width="small"),
+                "제목": st.column_config.TextColumn(width="large"),
+                "상태": st.column_config.TextColumn(width="small"),
+                "감지": st.column_config.TextColumn(width="small"),
+            },
         )
 
     with col_detail:
@@ -685,11 +708,10 @@ elif page == "규칙 관리":
         st.markdown(f"**{len(rules)}개 규칙**")
         df = pd.DataFrame([
             {
-                "ID": r.get("rule_id"),
-                "이름": (r.get("rule_name") or "")[:40],
-                "소스": "도구" if r.get("source_type") == "tool" else "SQL",
-                "유형": r.get("check_type", ""),
-                "LLM": "Y" if r.get("llm_enabled") else "N",
+                "규칙명": (r.get("rule_name") or "")[:35],
+                "카테고리": _CAT_MAP.get(r.get("category", ""), r.get("category", "")),
+                "유형": _CHECK_MAP.get(r.get("check_type", ""), r.get("check_type", "")),
+                "AI": "🟢" if r.get("llm_enabled") else "⚪",
             }
             for r in rules
         ])
@@ -701,6 +723,12 @@ elif page == "규칙 관리":
             selection_mode="single-row",
             on_select="rerun",
             key="rule_table",
+            column_config={
+                "규칙명": st.column_config.TextColumn(width="large"),
+                "카테고리": st.column_config.TextColumn(width="small"),
+                "유형": st.column_config.TextColumn(width="small"),
+                "AI": st.column_config.TextColumn(width="small"),
+            },
         )
 
     with col_detail:
@@ -778,11 +806,12 @@ elif page == "감지 로그":
         last_cycle = overview.get("last_cycle")
         if last_cycle:
             section_header("🔄", "마지막 감지 사이클")
-            st.dataframe(
-                pd.DataFrame([last_cycle]),
-                use_container_width=True,
-                hide_index=True,
-            )
+            lc1, lc2, lc3, lc4 = st.columns(4)
+            lc1.markdown(cycle_card(last_cycle.get("rules_evaluated", 0), "규칙 평가"), unsafe_allow_html=True)
+            lc2.markdown(cycle_card(last_cycle.get("anomalies_found", 0), "이상 감지"), unsafe_allow_html=True)
+            dur = last_cycle.get("duration_ms")
+            lc3.markdown(cycle_card(f"{dur}ms" if dur else "-", "소요시간"), unsafe_allow_html=True)
+            lc4.markdown(cycle_card(_fmt_time(last_cycle.get("started_at")), "시작시각"), unsafe_allow_html=True)
         else:
             st.info("감지 사이클 이력이 없습니다.")
     except Exception as e:
@@ -795,21 +824,36 @@ elif page == "감지 로그":
     try:
         anomalies = api.get_anomalies(limit=50)
         if anomalies:
+            status_labels = {"detected": "감지됨", "in_progress": "처리중", "resolved": "해결"}
+            status_icons = {"detected": "🔴", "in_progress": "🔧", "resolved": "✅"}
             for status_val in ["detected", "in_progress", "resolved"]:
                 filtered = [a for a in anomalies if a.get("status") == status_val]
                 if filtered:
-                    st.markdown(f'{badge(status_val.upper() + f" ({len(filtered)})", status_val)}', unsafe_allow_html=True)
+                    st.markdown(
+                        f'{status_icons.get(status_val, "")} '
+                        f'**{status_labels.get(status_val, status_val)}** ({len(filtered)}건)'
+                    )
                     df = pd.DataFrame([
                         {
-                            "ID": a.get("anomaly_id"),
+                            "심각도": _SEV_MAP.get(a.get("severity", ""), a.get("severity", "")),
                             "제목": (a.get("title") or "")[:50],
-                            "심각도": a.get("severity", ""),
-                            "감지시각": str(a.get("detected_at", ""))[:19],
+                            "카테고리": _CAT_MAP.get(a.get("category", ""), a.get("category", "")),
+                            "감지": _fmt_time(a.get("detected_at")),
                         }
                         for a in filtered
                     ])
-                    st.dataframe(df, use_container_width=True, hide_index=True)
-                    st.markdown("<br>", unsafe_allow_html=True)
+                    st.dataframe(
+                        df,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "심각도": st.column_config.TextColumn(width="small"),
+                            "제목": st.column_config.TextColumn(width="large"),
+                            "카테고리": st.column_config.TextColumn(width="small"),
+                            "감지": st.column_config.TextColumn(width="small"),
+                        },
+                    )
+                    st.markdown("")
         else:
             st.info("감지된 이상이 없습니다.")
     except Exception as e:
