@@ -51,7 +51,17 @@ def main():
     from simulator.seeder import seed_all
     seed_all()
 
-    # 4. 규칙 YAML → DB 동기화
+    # 4. 기본 admin 사용자 생성
+    import hashlib
+    admin_pw = hashlib.sha256("fab-admin".encode()).hexdigest()
+    conn.execute(
+        "INSERT OR IGNORE INTO users (username, password, display_name, role, enabled) VALUES (?, ?, ?, ?, ?)",
+        ("admin", admin_pw, "관리자", "admin", 1),
+    )
+    conn.commit()
+    logger.info("기본 admin 계정 생성")
+
+    # 5. 규칙 YAML → DB 동기화
     from rules.loader import sync_to_sqlite
     count = sync_to_sqlite(conn)
     logger.info("규칙 동기화: %d개", count)
@@ -62,7 +72,7 @@ def main():
     logger.info("다음 단계:")
     logger.info("  서버 시작:   python main.py --sqlite %s", args.db)
     logger.info("  데이터 주입: python data_injector.py --db %s", args.db)
-    logger.info("  대시보드:    streamlit run streamlit_app/app.py")
+    logger.info("  대시보드:    python -m nicegui_app.main")
     logger.info("=" * 50)
 
 

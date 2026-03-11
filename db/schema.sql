@@ -1,5 +1,16 @@
 -- FAB 이상감지 시스템 Oracle DDL
 
+-- 0. 사용자
+CREATE TABLE users (
+    user_id       NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    username      VARCHAR2(50)   NOT NULL UNIQUE,
+    password      VARCHAR2(200)  NOT NULL,
+    display_name  VARCHAR2(100),
+    role          VARCHAR2(20)   DEFAULT 'viewer',
+    enabled       NUMBER(1)      DEFAULT 1,
+    created_at    TIMESTAMP      DEFAULT SYSTIMESTAMP
+);
+
 -- 1. 감지 규칙
 CREATE TABLE detection_rules (
     rule_id        NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -21,7 +32,9 @@ CREATE TABLE detection_rules (
     llm_prompt     CLOB,
     enabled        NUMBER(1)      DEFAULT 1,
     created_at     TIMESTAMP      DEFAULT SYSTIMESTAMP,
-    updated_at     TIMESTAMP      DEFAULT SYSTIMESTAMP
+    updated_at     TIMESTAMP      DEFAULT SYSTIMESTAMP,
+    created_by     VARCHAR2(50),
+    updated_by     VARCHAR2(50)
 );
 
 -- 2. 감지된 이상

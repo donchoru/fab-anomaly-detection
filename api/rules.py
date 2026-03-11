@@ -18,7 +18,9 @@ router = APIRouter(prefix="/api/rules", tags=["rules"])
 
 
 @router.get("")
-async def list_rules():
+async def list_rules(include_disabled: bool = False):
+    if include_disabled:
+        return await queries.get_all_rules()
     return await queries.get_active_rules()
 
 

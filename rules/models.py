@@ -22,6 +22,7 @@ class RuleCreate(BaseModel):
     llm_enabled: bool = False
     llm_prompt: str | None = None
     enabled: bool = True
+    created_by: str | None = None
 
 
 class RuleUpdate(BaseModel):
@@ -41,6 +42,7 @@ class RuleUpdate(BaseModel):
     llm_enabled: bool | None = None
     llm_prompt: str | None = None
     enabled: bool | None = None
+    updated_by: str | None = None
 
 
 class RuleResponse(BaseModel):
@@ -58,3 +60,5 @@ class RuleResponse(BaseModel):
     eval_interval: int = 300
     llm_enabled: bool = False
     enabled: bool = True
+    created_by: str | None = None
+    updated_by: str | None = None

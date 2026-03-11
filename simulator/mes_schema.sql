@@ -144,6 +144,17 @@ CREATE TABLE IF NOT EXISTS mes_equipment_alarms (
     acknowledged INTEGER DEFAULT 0
 );
 
+-- 사용자
+CREATE TABLE IF NOT EXISTS users (
+    user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password TEXT NOT NULL,
+    display_name TEXT,
+    role TEXT DEFAULT 'viewer',
+    enabled INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now', 'localtime'))
+);
+
 -- 감지 시스템 테이블 (SQLite 버전)
 CREATE TABLE IF NOT EXISTS detection_rules (
     rule_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -164,7 +175,9 @@ CREATE TABLE IF NOT EXISTS detection_rules (
     llm_prompt TEXT,
     enabled INTEGER DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now', 'localtime')),
-    updated_at TEXT DEFAULT (datetime('now', 'localtime'))
+    updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+    created_by TEXT,
+    updated_by TEXT
 );
 
 CREATE TABLE IF NOT EXISTS anomalies (
@@ -205,4 +218,20 @@ CREATE TABLE IF NOT EXISTS detection_cycles (
     rules_evaluated INTEGER DEFAULT 0,
     anomalies_found INTEGER DEFAULT 0,
     duration_ms INTEGER
+);
+
+-- 원인분석(RCA) 결과
+CREATE TABLE IF NOT EXISTS rca_analyses (
+    rca_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    anomaly_id INTEGER NOT NULL REFERENCES anomalies(anomaly_id),
+    status TEXT DEFAULT 'pending',
+    root_cause TEXT,
+    cause_category TEXT,
+    contributing_factors TEXT,
+    evidence TEXT,
+    recommendations TEXT,
+    confidence REAL,
+    analyzed_at TEXT,
+    analysis_duration_ms INTEGER,
+    created_at TEXT DEFAULT (datetime('now', 'localtime'))
 );

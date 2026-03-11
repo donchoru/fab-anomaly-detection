@@ -133,11 +133,15 @@ from api.rules import router as rules_router
 from api.anomalies import router as anomalies_router
 from api.dashboard import router as dashboard_router
 from api.system import router as system_router
+from api.rca import router as rca_router
+from api.users import router as users_router
 
 app.include_router(rules_router)
 app.include_router(anomalies_router)
 app.include_router(dashboard_router)
 app.include_router(system_router)
+app.include_router(rca_router)
+app.include_router(users_router)
 
 
 if __name__ == "__main__":

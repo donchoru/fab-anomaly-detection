@@ -2,7 +2,7 @@
 
 ## 개요
 - **목적**: 반도체 FAB 폐쇄망에서 물류/WIP/설비 이상을 AI가 감지
-- **포트**: API 8600, Streamlit 3009
+- **포트**: API 8600, NiceGUI 대시보드 3009
 - **DB**: Oracle (운영) / SQLite (시뮬레이터)
 - **LLM**: OpenAI 호환 API (사내 LLM 또는 Ollama)
 
@@ -12,7 +12,7 @@ Detection Scheduler (매 5분)
   → 규칙 SQL 실행 → 임계치 비교
   → 위반 시 LLM 에이전트가 실제 이상 판단
   → DB INSERT (anomalies 테이블)
-  → Streamlit 대시보드에서 조회
+  → NiceGUI 대시보드에서 조회
 ```
 
 ### 추후 확장
@@ -38,7 +38,7 @@ Detection Scheduler (매 5분)
 | `rules/engine.py` | threshold/delta/absence/llm 평가 |
 | `api/rules.py` | 규칙 CRUD + AI 자연어 생성 + YAML 동기화 |
 | `db/queries.py` | 모든 DB 쿼리 |
-| `streamlit_app/app.py` | 4페이지 대시보드 |
+| `nicegui_app/main.py` | NiceGUI 4페이지 대시보드 |
 | `simulator/runner.py` | SQLite 시뮬레이터 |
 
 ## DB 테이블 (sentinel_ 접두사 없음)
@@ -50,7 +50,7 @@ Detection Scheduler (매 5분)
 ## 시뮬레이터 실행
 ```bash
 python -m simulator.runner           # API (:8600)
-streamlit run streamlit_app/app.py   # 대시보드 (:3009)
+python -m nicegui_app.main           # 대시보드 (:3009)
 ```
 
 ## 주의사항

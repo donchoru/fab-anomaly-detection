@@ -1,4 +1,4 @@
-"""DB 쿼리 — 감지 규칙, 이상, 상관, 사이클."""
+"""DB 쿼리 — 감지 규칙, 이상, 상관, 사이클, 사용자."""
 
 from __future__ import annotations
 
@@ -8,12 +8,52 @@ from typing import Any
 from db.oracle import execute, execute_dml, execute_returning
 
 
+# ── Users ──
+
+async def get_all_users() -> list[dict[str, Any]]:
+    return await execute("SELECT * FROM users ORDER BY user_id")
+
+
+async def get_user(user_id: int) -> dict[str, Any] | None:
+    rows = await execute("SELECT * FROM users WHERE user_id = :id", {"id": user_id})
+    return rows[0] if rows else None
+
+
+async def get_user_by_username(username: str) -> dict[str, Any] | None:
+    rows = await execute("SELECT * FROM users WHERE username = :username", {"username": username})
+    return rows[0] if rows else None
+
+
+async def create_user(data: dict[str, Any]) -> int:
+    cols = ", ".join(data.keys())
+    vals = ", ".join(f":{k}" for k in data.keys())
+    sql = f"INSERT INTO users ({cols}) VALUES ({vals}) RETURNING user_id INTO :out_id"
+    return int(await execute_returning(sql, data))
+
+
+async def update_user(user_id: int, data: dict[str, Any]) -> int:
+    sets = ", ".join(f"{k} = :{k}" for k in data.keys())
+    data["id"] = user_id
+    return await execute_dml(
+        f"UPDATE users SET {sets} WHERE user_id = :id",
+        data,
+    )
+
+
+async def delete_user(user_id: int) -> int:
+    return await execute_dml("DELETE FROM users WHERE user_id = :id", {"id": user_id})
+
+
 # ── Rules ──
 
 async def get_active_rules() -> list[dict[str, Any]]:
     return await execute(
         "SELECT * FROM detection_rules WHERE enabled = 1 ORDER BY rule_id"
     )
+
+
+async def get_all_rules() -> list[dict[str, Any]]:
+    return await execute("SELECT * FROM detection_rules ORDER BY rule_id")
 
 
 async def get_rule(rule_id: int) -> dict[str, Any] | None:
@@ -126,6 +166,48 @@ async def get_correlation_with_anomalies(correlation_id: int) -> dict[str, Any] 
     result = corrs[0]
     result["anomalies"] = anoms
     return result
+
+
+# ── RCA ──
+
+async def insert_rca(data: dict[str, Any]) -> int:
+    cols = ", ".join(data.keys())
+    vals = ", ".join(f":{k}" for k in data.keys())
+    sql = f"INSERT INTO rca_analyses ({cols}) VALUES ({vals}) RETURNING rca_id INTO :out_id"
+    return int(await execute_returning(sql, data))
+
+
+async def get_rca_by_anomaly(anomaly_id: int) -> dict[str, Any] | None:
+    rows = await execute(
+        "SELECT * FROM rca_analyses WHERE anomaly_id = :id ORDER BY created_at DESC FETCH NEXT 1 ROWS ONLY",
+        {"id": anomaly_id},
+    )
+    return rows[0] if rows else None
+
+
+async def get_rca_list(status: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+    where = "WHERE r.status = :status" if status else ""
+    params: dict[str, Any] = {"lim": limit}
+    if status:
+        params["status"] = status
+    return await execute(
+        f"""SELECT r.*, a.title as anomaly_title, a.severity, a.category
+            FROM rca_analyses r
+            JOIN anomalies a ON r.anomaly_id = a.anomaly_id
+            {where}
+            ORDER BY r.created_at DESC
+            FETCH NEXT :lim ROWS ONLY""",
+        params,
+    )
+
+
+async def update_rca(rca_id: int, data: dict[str, Any]) -> int:
+    sets = ", ".join(f"{k} = :{k}" for k in data.keys())
+    data["id"] = rca_id
+    return await execute_dml(
+        f"UPDATE rca_analyses SET {sets} WHERE rca_id = :id",
+        data,
+    )
 
 
 # ── Detection Cycles ──
