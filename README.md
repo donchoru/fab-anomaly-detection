@@ -59,20 +59,104 @@ python data_injector.py --speed 2
         → 실제 이상 여부 확인 → DB INSERT
 ```
 
-### 2. LLM 판단 (llm_enabled 규칙)
+### 2. AI 에이전트 — 자연어 기반 이상감지
 
-임계치 위반이 감지되면, **LLM이 해당 도구의 데이터를 보고 실제 이상인지 판단**합니다.
+규칙에 `llm_enabled: true`가 설정되어 있으면, 임계치 위반 시 **LLM(Gemini 2.0 Flash)이 실제 이상인지 최종 판단**합니다.
+
+#### 동작 흐름
 
 ```
-[컨베이어 부하율 > 95% 위반]
-  → get_conveyor_load() 데이터 전달
-  → LLM 판단: "LINE03-ZONE-A 부하율 100%, 병목 발생 확인"
-  → 이상 등록 (severity: critical)
+[규칙 위반 감지] (예: 컨베이어 부하율 > 95%)
+  │
+  ├─ 1. 도구 데이터 수집
+  │     get_conveyor_load() → 존별 부하율 데이터
+  │
+  ├─ 2. LLM에 전달 (OpenAI 호환 API)
+  │     ┌──────────────────────────────────┐
+  │     │ System: 이상감지 AI 에이전트      │
+  │     │ User:                            │
+  │     │   규칙: 컨베이어 부하율 과부하     │
+  │     │   측정값: 96%                     │
+  │     │   임계치: 경고 85 / 위험 95       │
+  │     │   데이터: [{zone: LINE03-A, ...}] │
+  │     │   프롬프트: "병목 여부 확인하세요" │
+  │     └──────────────────────────────────┘
+  │
+  ├─ 3. LLM 응답 (JSON)
+  │     {
+  │       "is_anomaly": true,
+  │       "confidence": 0.92,
+  │       "severity": "critical",
+  │       "title": "LINE03-ZONE-A 컨베이어 과부하",
+  │       "analysis": "부하율 96%, 대기 캐리어 3대 적체",
+  │       "affected_entity": "LINE03-ZONE-A"
+  │     }
+  │
+  └─ 4. confidence ≥ 0.7이면 이상 등록 → DB INSERT
 ```
 
-- 규칙에 **도구가 1개 지정**되어 있고, 그 데이터만 LLM에 전달
-- LLM은 데이터를 보고 이상 여부 + 설명 + 영향 대상을 판단
-- `llm_enabled: false`인 규칙은 임계치만으로 자동 판정 (LLM 호출 없음)
+#### AI 에이전트 구성 파일
+
+| 파일 | 역할 |
+|------|------|
+| `agent/llm_client.py` | OpenAI 호환 HTTP 클라이언트 (`/v1/chat/completions`) |
+| `agent/agent_loop.py` | 에이전트 루프 — LLM 호출 → 도구 실행 → 반복 (최대 3라운드) |
+| `agent/prompts.py` | 시스템 프롬프트 (이상감지 / RCA / 상관분석) |
+| `agent/detection_agent.py` | 규칙 위반 데이터 + 프롬프트 조합 → LLM 판단 → DB 저장 |
+| `agent/tool_registry.py` | `@registry.tool` 데코레이터 → JSON Schema 자동 생성 |
+
+#### LLM 설정
+
+OpenAI 호환 API를 사용하므로 **Gemini / 사내 LLM / Ollama** 등 어떤 LLM이든 연결 가능합니다.
+
+```bash
+# 환경변수로 설정
+LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai  # Gemini
+LLM_API_KEY=your-api-key
+LLM_MODEL=gemini-2.0-flash
+
+# 사내 LLM 또는 Ollama 사용 시
+LLM_BASE_URL=http://llm-server:8080/v1
+LLM_MODEL=your-model-name
+```
+
+| 설정 | 기본값 | 설명 |
+|------|--------|------|
+| `LLM_BASE_URL` | Gemini OpenAI 호환 엔드포인트 | `/v1/chat/completions` 지원하는 URL |
+| `LLM_API_KEY` | — | API 인증 키 |
+| `LLM_MODEL` | `gemini-2.0-flash` | 모델명 |
+| `timeout` | 60초 | API 호출 타임아웃 |
+| `max_tokens` | 2048 | 최대 응답 토큰 |
+| `temperature` | 0.1 | 낮을수록 일관된 판단 |
+
+#### llm_enabled vs llm_enabled 아닌 규칙
+
+| | `llm_enabled: false` | `llm_enabled: true` |
+|--|----------------------|---------------------|
+| **판단 주체** | 룰 엔진 (코드) | LLM (AI) |
+| **판단 기준** | 측정값 vs 임계치 | 데이터 패턴 + 자연어 조건 |
+| **속도** | ~1ms | ~2~5초 (API 호출) |
+| **API 키** | 불필요 | 필요 |
+| **적합한 경우** | 단순 수치 비교 | 복합 패턴, 맥락 판단 |
+| **예시** | 부하율 > 90% | "같은 라인 2대 동시 DOWN이면 이상" |
+
+#### 에이전트 루프 상세
+
+`agent_loop.py`는 LLM이 추가 도구를 호출할 수 있는 **멀티 라운드 루프**를 지원합니다.
+
+```
+라운드 1: LLM이 데이터를 보고 추가 도구 호출 요청
+  → get_equipment_alarms(equipment_id="EQ-005") 실행
+  → 결과를 LLM에 다시 전달
+
+라운드 2: LLM이 충분한 정보로 최종 판단
+  → JSON 응답 반환 (is_anomaly, severity, analysis 등)
+```
+
+- 최대 3라운드 (설정 가능)
+- LLM이 도구를 호출하지 않으면 즉시 최종 응답
+- 3라운드 초과 시 강제로 최종 응답 요청
+- 응답은 반드시 JSON 형식 (`is_anomaly`, `confidence`, `severity`, `title`, `analysis`, `affected_entity`)
 
 ### 3. YAML 기반 규칙 관리
 
@@ -286,6 +370,44 @@ sequenceDiagram
     end
 
     S->>DB: 사이클 로그 저장<br/>(규칙 수, 이상 수, 소요시간)
+```
+
+### AI 에이전트 루프 (llm_enabled 규칙)
+
+```mermaid
+sequenceDiagram
+    participant E as Evaluator
+    participant D as Detection Agent
+    participant C as LLM Client
+    participant LLM as LLM<br/>(Gemini 2.0 Flash)
+    participant T as Tool Registry
+    participant DB as DB
+
+    E->>D: analyze_and_save(rule, 측정값, 데이터)
+    D->>D: 사용자 메시지 구성<br/>(규칙 + 측정값 + 도구 데이터 + 프롬프트)
+    D->>C: run_agent_loop(system_prompt, user_msg)
+
+    loop 최대 3라운드
+        C->>LLM: POST /v1/chat/completions<br/>(messages + tools)
+        LLM-->>C: 응답
+
+        alt 도구 호출 요청
+            C->>T: dispatch(tool_name, args)
+            T->>DB: MES 조회
+            DB-->>T: rows
+            T-->>C: 결과 JSON
+            Note over C: 도구 결과를 messages에 추가
+        else 최종 응답 (JSON)
+            C-->>D: {is_anomaly, confidence,<br/>severity, title, analysis}
+        end
+    end
+
+    alt is_anomaly && confidence ≥ 0.7
+        D->>DB: INSERT INTO anomalies
+        D-->>E: anomaly_data
+    else 정상 판단
+        D-->>E: None
+    end
 ```
 
 ### 규칙 YAML ↔ DB 동기화
