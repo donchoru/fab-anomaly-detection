@@ -4,26 +4,55 @@
 
 오픈소스 프레임워크(LangChain 등) 없이, **OpenAI 호환 LLM + Oracle DB + 도구 기반 에이전트**로 구축했습니다.
 
-> 시뮬레이터 포함 — Oracle 없이 **SQLite + 더미 데이터**로 즉시 실행 가능합니다.
+> Oracle 없이 **SQLite + 더미 데이터**로 즉시 실행 가능합니다.
+
+---
+
+## 빠른 시작
+
+```bash
+# 1. 환경 준비
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+# 2. DB 초기화 (테이블 + 정상 데이터 + 규칙 동기화)
+python init_db.py
+
+# 3. API 서버 시작
+python main.py --sqlite simulator.db --port 8600 --interval 60
+
+# 4. 대시보드 (별도 터미널)
+streamlit run streamlit_app/app.py
+
+# 5. 이상 데이터 주입 (별도 터미널)
+python data_injector.py --speed 2
+```
+
+| 스크립트 | 역할 | 실행 |
+|----------|------|------|
+| `init_db.py` | DB 생성 + 테이블 + 시딩 + 규칙 | 1회 |
+| `main.py --sqlite` | API 서버 + 감지 스케줄러 | 상시 |
+| `data_injector.py` | 이상 시나리오 주입 | 필요 시 |
+| `streamlit run ...` | 대시보드 | 상시 |
 
 ---
 
 ## 핵심 기능
 
-### 1. 규칙 기반 이상감지 (5분 주기)
+### 1. 규칙 기반 이상감지 (주기적)
 
 등록된 규칙을 주기적으로 평가하여 이상을 감지합니다.
 
 ```
-매 5분 (스케줄러)
+매 N초 (스케줄러)
   │
   ├─ 1. 활성 규칙 로드 (DB ← rules.yaml 동기화)
   │
-  ├─ 2. 규칙별 도구 실행 + 평가
+  ├─ 2. 규칙별 도구 실행 + 평가 (asyncio.gather 병렬)
   │     ├─ threshold : 측정값 > 임계치?     (예: 컨베이어 부하율 > 90%)
   │     ├─ delta     : 변화율 > 임계치?     (예: WIP 1시간 변화율 > 30%)
   │     ├─ absence   : 데이터 없음?         (예: 30분간 반송 기록 없음)
-  │     └─ llm       : AI에게 판단 위임     (예: ERROR AGV 비율 판단)
+  │     └─ llm       : AI에게 판단 위임     (예: 설비 복합 이상 패턴)
   │
   └─ 3. 위반 시 (llm_enabled)
         → 지정된 도구 데이터 → LLM 1회 판단
@@ -109,18 +138,26 @@ rules:
 
 Streamlit 대시보드에서 규칙을 추가할 때 2가지 패턴을 선택할 수 있습니다.
 
-### 패턴 1: 📊 임계치 감시
+### 패턴 1: 조건 감시
 
-도구를 연결하고, **감시할 컬럼 + 경고/위험 임계치**를 직접 설정합니다.
+도구를 연결하고, **감시 유형 + 감시 컬럼 + 경고/위험 임계치**를 설정합니다.
 
 ```
 규칙명: "컨베이어 부하율 과부하"
   → 도구: get_conveyor_load (컨베이어 부하율)
+  → 감시 유형: 임계치 초과
   → 감시 컬럼: load_pct (부하율 %)
   → 조건: > 85 (경고) / > 95 (위험)
 ```
 
-### 패턴 2: 🤖 AI 판단
+감시 유형:
+| 유형 | 동작 | 예시 |
+|------|------|------|
+| **임계치 초과** | 측정값이 임계치를 넘으면 이상 | 부하율 > 90% |
+| **변화율 초과** | 측정값의 절대 변화율이 임계치를 넘으면 이상 | WIP 변화율 > 30% |
+| **데이터 부재** | 도구 실행 결과 데이터가 없으면 이상 | 30분간 반송 기록 0건 |
+
+### 패턴 2: AI 판단
 
 도구를 연결하고, **자연어로 이상 조건을 설명**하면 AI가 매 사이클마다 판단합니다.
 숫자 비교는 조건 감시에 맡기고, **패턴 인식·맥락 판단**처럼 코드로 표현하기 어려운 조건에 적합합니다.
@@ -162,29 +199,29 @@ stateDiagram-v2
 
 ```mermaid
 graph TB
-    subgraph client["👤 Streamlit 대시보드 (:3009)"]
+    subgraph client["Streamlit 대시보드 (:3009)"]
         page1["대시보드<br/>KPI + 차트"]
         page2["이상 목록<br/>상세 + 상태전이"]
         page3["규칙 관리<br/>조건감시 / AI판단"]
         page4["감지 로그<br/>사이클 이력"]
     end
 
-    subgraph server["⚙️ FastAPI 서버 (:8600)"]
+    subgraph server["FastAPI 서버 (:8600)"]
         api["REST API"]
-        scheduler["APScheduler<br/>매 5분"]
+        scheduler["APScheduler<br/>매 N초"]
         engine["Rule Engine<br/>threshold / delta<br/>absence / llm"]
         agent["Detection Agent<br/>LLM 판단"]
     end
 
-    subgraph tools["🔧 도구 (15개)"]
+    subgraph tools["도구 (15개)"]
         logistics["물류 5개<br/>conveyor, throughput<br/>bottleneck, AGV, history"]
         wip["재공 5개<br/>levels, flow, queue<br/>aging, trend"]
         equipment["설비 5개<br/>status, utilization<br/>downs, PM, alarms"]
     end
 
-    subgraph data["💾 데이터"]
+    subgraph data["데이터"]
         yaml["rules.yaml<br/>규칙 원본"]
-        db[("Oracle DB<br/>MES 14 테이블<br/>+ 감지 테이블")]
+        db[("Oracle / SQLite<br/>MES 14 테이블<br/>+ 감지 테이블")]
     end
 
     client <-->|httpx| api
@@ -206,18 +243,23 @@ graph TB
 
 ```mermaid
 sequenceDiagram
-    participant S as Scheduler<br/>(매 5분)
+    participant S as Scheduler
     participant E as Rule Engine
-    participant T as Tool<br/>(15개)
-    participant DB as Oracle DB
-    participant L as LLM<br/>(Gemini)
-    participant A as anomalies<br/>테이블
+    participant T as Tool (15개)
+    participant DB as DB
+    participant L as LLM (Gemini)
+    participant A as anomalies 테이블
 
     S->>DB: 활성 규칙 로드
-    DB-->>S: 규칙 5개
+    DB-->>S: 규칙 N개
 
-    loop 규칙별 평가
-        S->>E: evaluate_rule(rule)
+    par asyncio.gather 병렬 평가
+        S->>E: evaluate_rule(rule_1)
+        S->>E: evaluate_rule(rule_2)
+        S->>E: evaluate_rule(rule_N)
+    end
+
+    loop 규칙별 (병렬)
         E->>T: 지정된 도구 호출<br/>예: get_conveyor_load()
         T->>DB: MES 테이블 조회
         DB-->>T: 데이터 rows
@@ -252,7 +294,7 @@ sequenceDiagram
 sequenceDiagram
     participant Y as rules.yaml<br/>(원본)
     participant L as loader.py
-    participant DB as Oracle DB
+    participant DB as DB
     participant UI as Streamlit<br/>대시보드
 
     Note over Y,DB: 서버 시작 시 (YAML → DB)
@@ -272,9 +314,10 @@ sequenceDiagram
 
 ```mermaid
 graph LR
-    subgraph main["main.py"]
-        FastAPI
-        APScheduler
+    subgraph entry["진입점"]
+        init_db["init_db.py<br/>DB 초기화"]
+        main["main.py<br/>서버 + 스케줄러"]
+        injector["data_injector.py<br/>데이터 주입"]
     end
 
     subgraph detection["detection/"]
@@ -284,7 +327,6 @@ graph LR
     subgraph rules["rules/"]
         engine.py
         loader.py
-        models.py
     end
 
     subgraph agent["agent/"]
@@ -314,9 +356,10 @@ graph LR
     tool_registry.py --> tools
     detection_agent.py --> llm_client.py
     api_rules --> loader.py
-    loader.py --> rules.yaml["rules.yaml"]
+    loader.py --> rules_yaml["rules.yaml"]
+    init_db --> loader.py
 
-    style main fill:#065f46,stroke:#10b981,color:#f3f4f6
+    style entry fill:#065f46,stroke:#10b981,color:#f3f4f6
     style detection fill:#1e3a5f,stroke:#3b82f6,color:#f3f4f6
     style rules fill:#5b21b6,stroke:#8b5cf6,color:#f3f4f6
     style agent fill:#92400e,stroke:#f59e0b,color:#f3f4f6
@@ -341,7 +384,7 @@ erDiagram
         varchar threshold_op
         float warning_value
         float critical_value
-        int eval_interval "초"
+        int eval_interval
         int llm_enabled "0/1"
         clob llm_prompt
         int enabled "0/1"
@@ -409,7 +452,7 @@ erDiagram
 | **API 서버** | FastAPI + Uvicorn | 비동기 Web API (포트 8600) |
 | **대시보드** | Streamlit | 4페이지 대시보드 (포트 3009) |
 | **DB (운영)** | Oracle (oracledb thin) | Instant Client 없이 순수 Python 연결 |
-| **DB (시뮬레이터)** | SQLite | Oracle SQL → SQLite 자동 변환 |
+| **DB (개발)** | SQLite | Oracle SQL → SQLite 자동 변환 |
 | **LLM** | OpenAI 호환 API | Gemini 2.0 Flash / 사내 LLM / Ollama |
 | **스케줄러** | APScheduler | 감지 주기 스케줄링 |
 | **AI 패턴** | Tool + LLM 판단 | 도구 데이터 → LLM 1회 판단 |
@@ -421,7 +464,9 @@ erDiagram
 
 ```
 fab-sentinel/
-├── main.py                         # FastAPI + APScheduler 진입점 (:8600)
+├── init_db.py                      # DB 초기화 (1회 실행)
+├── main.py                         # API 서버 + 감지 스케줄러
+├── data_injector.py                # 이상 데이터 주입기
 ├── config.py                       # 환경설정 (DB, LLM, 스케줄)
 ├── rules.yaml                      # 규칙 원본 (Source of Truth)
 ├── requirements.txt
@@ -431,7 +476,7 @@ fab-sentinel/
 │   ├── tool_registry.py            # @registry.tool → JSON Schema 자동 생성
 │   ├── agent_loop.py               # 에이전트 루프 (도구 데이터 → LLM 판단)
 │   ├── prompts.py                  # 시스템 프롬프트
-│   ├── detection_agent.py          # 도구 데이터 + RAG → LLM 판단 → DB INSERT
+│   ├── detection_agent.py          # 도구 데이터 → LLM 판단 → DB INSERT
 │   └── tools/                      # 데이터 조회 도구 (15개)
 │       ├── logistics.py            # 컨베이어, 반송, 병목존, AGV
 │       ├── wip.py                  # WIP, 흐름, 큐, 에이징, 트렌드
@@ -443,7 +488,7 @@ fab-sentinel/
 │   └── loader.py                   # YAML ↔ DB 양방향 동기화
 │
 ├── detection/                      # 감지 오케스트레이션
-│   ├── scheduler.py                # 감지 사이클 관리
+│   ├── scheduler.py                # 감지 사이클 (asyncio.gather 병렬)
 │   └── evaluator.py                # 규칙별 평가 → 에이전트 연동
 │
 ├── db/
@@ -462,39 +507,12 @@ fab-sentinel/
 │   ├── api_client.py               # httpx 동기 API 래퍼
 │   └── app.py                      # 4페이지 대시보드
 │
-├── examples/                       # 예시 데이터
-│   └── rag-knowledge/              # RAG 임베딩 전문지식 예시
-│
-└── simulator/                      # SQLite 기반 시뮬레이터
-    ├── runner.py                   # 시뮬레이터 진입점
+└── simulator/                      # SQLite 지원 모듈
     ├── sqlite_backend.py           # Oracle → SQLite 몽키패치
-    ├── sql_compat.py               # Oracle SQL → SQLite 변환
-    ├── mes_schema.sql              # MES 더미 데이터 스키마
-    ├── seeder.py                   # 더미 데이터 시딩
-    ├── data_generator.py           # 더미 데이터 생성기
-    └── scenarios.py                # 이상 시나리오 자동 재현
-```
-
----
-
-## 시뮬레이터
-
-Oracle 없이 **SQLite + 더미 데이터**로 전체 시스템을 실행할 수 있습니다.
-
-### 시뮬레이터가 하는 일
-
-1. **SQLite DB 생성** — MES 14개 테이블 + 감지 테이블
-2. **더미 데이터 시딩** — 설비, 컨베이어, AGV, WIP, LOT 등
-3. **Oracle SQL 자동 변환** — `SYSTIMESTAMP` → `datetime('now')`, `FETCH NEXT` → `LIMIT` 등
-4. **이상 시나리오 재현** — 컨베이어 과부하, 설비 정지, WIP 급증 등을 시간차로 발생
-
-### 시나리오 예시
-
-```
-0초   → 컨베이어 과부하 시나리오 시작 (LINE03-ZONE-A 부하 100%로 변경)
-30초  → 설비 비계획정지 시나리오 (EQ-005 DOWN 상태로 변경)
-60초  → WIP 급증 시나리오 (TFT-03 공정 WIP 600%로 변경)
-120초 → 시나리오 종료 → 정상 복귀 → 반복
+    ├── sql_compat.py               # Oracle SQL → SQLite 자동 변환
+    ├── mes_schema.sql              # MES 테이블 스키마 (14개)
+    ├── seeder.py                   # 정상 상태 더미 데이터 생성
+    └── scenarios.py                # 이상 시나리오 (5개)
 ```
 
 ---
@@ -505,36 +523,123 @@ Oracle 없이 **SQLite + 더미 데이터**로 전체 시스템을 실행할 수
 
 - Python 3.12+
 - (운영) Oracle DB + MES 테이블
-- (시뮬레이터) 별도 DB 불필요
+- (개발) 별도 DB 불필요 (SQLite)
 
-### 시뮬레이터 실행 (Oracle 불필요)
+### 개발 모드 (SQLite)
+
+Oracle 없이 SQLite로 전체 시스템을 실행합니다.
 
 ```bash
 # 가상환경 생성 + 패키지 설치
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+```
 
-# API 서버 (포트 8600) + 시뮬레이터
-python -m simulator.runner
+#### Step 1. DB 초기화
 
-# 대시보드 (포트 3009) — 별도 터미널
+```bash
+python init_db.py
+```
+
+- MES 14개 테이블 + 감지 3개 테이블 생성
+- 설비, 컨베이어, AGV, WIP, LOT 등 정상 상태 더미 데이터 시딩
+- `rules.yaml` → SQLite 규칙 동기화
+
+옵션:
+| 옵션 | 기본값 | 설명 |
+|------|--------|------|
+| `--db` | `simulator.db` | SQLite 파일 경로 |
+| `--reset` | — | 기존 DB 삭제 후 재생성 |
+
+```bash
+# 커스텀 DB 파일
+python init_db.py --db my_test.db
+
+# 기존 DB 초기화
+python init_db.py --reset
+```
+
+#### Step 2. API 서버 시작
+
+```bash
+python main.py --sqlite simulator.db
+```
+
+- `--sqlite` 플래그로 SQLite 모드 자동 전환 (Oracle monkey-patch)
+- 감지 스케줄러 자동 시작 (기본 300초 간격)
+
+옵션:
+| 옵션 | 기본값 | 설명 |
+|------|--------|------|
+| `--sqlite` | — | SQLite DB 파일 (없으면 Oracle 모드) |
+| `--port` | `8600` | API 포트 |
+| `--interval` | `300` | 감지 주기 (초) |
+
+```bash
+# 60초 간격, 포트 9000
+python main.py --sqlite simulator.db --port 9000 --interval 60
+```
+
+#### Step 3. 대시보드
+
+```bash
 streamlit run streamlit_app/app.py
 ```
 
-### 운영 실행
+브라우저에서 `http://localhost:3009` 접속.
+
+#### Step 4. 이상 데이터 주입
+
+정상 데이터만으로는 이상이 감지되지 않습니다.
+별도 터미널에서 이상 시나리오를 주입합니다.
 
 ```bash
-# 환경변수 설정 (.env)
-ORACLE_USER=fab
-ORACLE_PASSWORD=password
-ORACLE_DSN=dbhost:1521/FABDB
-LLM_BASE_URL=http://llm-server:8080/v1
-LLM_API_KEY=your-key
-LLM_MODEL=model-name
+python data_injector.py
+```
 
-# 실행
-python main.py                      # API :8600
-streamlit run streamlit_app/app.py  # 대시보드 :3009
+5개 시나리오가 60초 간격으로 주입됩니다:
+
+| 순서 | 시나리오 | 주입 내용 |
+|------|---------|----------|
+| 1 | 컨베이어 과부하 | LINE03-ZONE-A 부하율 96%로 변경 |
+| 2 | 설비 비계획정지 | EQ-005 DOWN + CRITICAL 알람 |
+| 3 | WIP 적체 | TFT-03 공정 WIP 170%로 급등 |
+| 4 | 에이징 LOT | 5개 LOT 24~48시간 체류 |
+| 5 | AGV 장애 | AGV 3대 ERROR 상태 |
+
+옵션:
+| 옵션 | 기본값 | 설명 |
+|------|--------|------|
+| `--db` | `simulator.db` | SQLite DB 파일 |
+| `--speed` | `2` | 속도 배율 (2 = 30초 간격) |
+| `--reset` | — | 이전 주입 데이터 초기화 후 재주입 |
+| `--loop` | — | 주입 후 상황 점진적 악화 반복 |
+
+```bash
+# 빠르게 테스트 (100x 속도)
+python data_injector.py --speed 100
+
+# 이전 데이터 지우고 다시 주입
+python data_injector.py --reset
+
+# 주입 후 계속 악화 (Ctrl+C로 중지)
+python data_injector.py --reset --loop
+```
+
+### 운영 모드 (Oracle)
+
+```bash
+# 환경변수 설정
+export ORACLE_USER=fab
+export ORACLE_PASSWORD=password
+export ORACLE_DSN=dbhost:1521/FABDB
+export LLM_BASE_URL=http://llm-server:8080/v1
+export LLM_API_KEY=your-key
+export LLM_MODEL=model-name
+
+# 실행 (--sqlite 없으면 Oracle 모드)
+python main.py
+streamlit run streamlit_app/app.py
 ```
 
 ---
@@ -548,7 +653,7 @@ streamlit run streamlit_app/app.py  # 대시보드 :3009
 | 규칙 | `PATCH /api/rules/{id}` | 규칙 수정 |
 | 규칙 | `DELETE /api/rules/{id}` | 규칙 삭제 |
 | 규칙 | `POST /api/rules/{id}/test` | 도구 테스트 실행 |
-| 규칙 | `GET /api/rules/tools/catalog` | 도구 카탈로그 (14개) |
+| 규칙 | `GET /api/rules/tools/catalog` | 도구 카탈로그 (15개) |
 | 이상 | `GET /api/anomalies` | 이상 목록 |
 | 이상 | `GET /api/anomalies/active` | 활성 이상 |
 | 이상 | `PATCH /api/anomalies/{id}/status` | 상태 변경 |
@@ -571,11 +676,24 @@ streamlit run streamlit_app/app.py  # 대시보드 :3009
 | `anomalies` | 감지된 이상 + AI 분석 결과 |
 | `detection_cycles` | 감지 사이클 로그 (소요시간, 규칙 수, 이상 수) |
 
-### MES 참조 테이블 (14개)
+### MES 테이블 (14개)
 
-물류: `mes_conveyor_status`, `mes_transfer_log`, `mes_carrier_queue`, `mes_vehicle_status`
-재공: `mes_wip_summary`, `mes_wip_flow`, `mes_queue_status`, `mes_lot_status`, `mes_wip_snapshot`
-설비: `mes_equipment_status`, `mes_equipment_history`, `mes_down_history`, `mes_pm_schedule`, `mes_equipment_alarms`
+| 영역 | 테이블 | 용도 |
+|------|--------|------|
+| 물류 | `mes_conveyor_status` | 존별 컨베이어 현재 부하 |
+| 물류 | `mes_transfer_log` | 반송 이력 (출발→도착, 소요시간) |
+| 물류 | `mes_carrier_queue` | 대기 중인 캐리어 큐 |
+| 물류 | `mes_vehicle_status` | AGV/OHT 상태 (RUN/IDLE/ERROR) |
+| 재공 | `mes_wip_summary` | 공정·스텝별 현재 WIP vs 목표 |
+| 재공 | `mes_wip_flow` | WIP 유입/유출 흐름 |
+| 재공 | `mes_queue_status` | 스텝별 대기 LOT 수 + 대기시간 |
+| 재공 | `mes_lot_status` | LOT별 현재 위치 + 체류시간 |
+| 재공 | `mes_wip_snapshot` | 시간별 WIP 스냅샷 (트렌드) |
+| 설비 | `mes_equipment_status` | 설비 현재 상태 |
+| 설비 | `mes_equipment_history` | 설비 상태 이력 |
+| 설비 | `mes_down_history` | 비계획정지 이력 |
+| 설비 | `mes_pm_schedule` | PM 일정 |
+| 설비 | `mes_equipment_alarms` | 설비 알람 이력 |
 
 ---
 
@@ -587,8 +705,26 @@ streamlit run streamlit_app/app.py  # 대시보드 :3009
 |--------|------|
 | **대시보드** | KPI 카드 (활성위험/경고/24h이상/활성규칙), 상태 분포 차트, 수동 감지 |
 | **이상 목록** | 상태별 필터 (감지됨/처리중/해결), 좌우 분할(목록+상세), AI 분석, 상태 전이 |
-| **규칙 관리** | 2탭 추가 (임계치 감시/AI 판단), 도구 카탈로그, 테스트 실행 |
+| **규칙 관리** | 2탭 추가 (조건 감시/AI 판단), 감시 유형 선택, 도구 카탈로그, 테스트 실행 |
 | **감지 로그** | 감지 사이클 이력, 상태별 이상 통계 |
+
+### Oracle ↔ SQLite 전환
+
+`main.py`의 `--sqlite` 플래그 유무로 전환합니다.
+
+```
+python main.py                          # Oracle 모드 (운영)
+python main.py --sqlite simulator.db    # SQLite 모드 (개발)
+```
+
+내부적으로 `simulator/sqlite_backend.py`가 `db.oracle` 모듈의 함수(`execute`, `execute_dml` 등)를 SQLite 버전으로 교체(monkey-patch)합니다. 나머지 코드(도구, 쿼리, 에이전트)는 **동일한 코드**가 양쪽 모드에서 실행됩니다.
+
+Oracle SQL → SQLite 변환(`simulator/sql_compat.py`)이 자동 처리하는 항목:
+- `SYSTIMESTAMP` → `datetime('now')`
+- `FETCH NEXT N ROWS ONLY` → `LIMIT N`
+- `NVL()` → `COALESCE()`
+- `INTERVAL '24' HOUR` → `datetime('now', '-24 hours')`
+- 바인드 변수 `:name` → `:name` (동일)
 
 ---
 
@@ -621,15 +757,15 @@ graph LR
 ```mermaid
 graph LR
     subgraph goal["목표: 연쇄 분석"]
-        cause["🔴 EQ-005 정지<br/>(근본 원인)"]
-        effect1["🟡 TFT-03 WIP 적체<br/>(영향)"]
-        effect2["🟡 LINE03 컨베이어 과부하<br/>(결과)"]
+        cause["EQ-005 정지<br/>(근본 원인)"]
+        effect1["TFT-03 WIP 적체<br/>(영향)"]
+        effect2["LINE03 컨베이어 과부하<br/>(결과)"]
 
         cause -->|30분 후| effect1
         effect1 -->|1시간 후| effect2
     end
 
-    insight["💡 통찰<br/>EQ-005 복구 우선<br/>투입 제한 검토"]
+    insight["통찰<br/>EQ-005 복구 우선<br/>투입 제한 검토"]
     goal --> insight
 
     style goal fill:#1e293b,stroke:#10b981,color:#f3f4f6
