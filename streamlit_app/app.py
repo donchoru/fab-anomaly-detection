@@ -1,8 +1,9 @@
-"""FAB 이상감지 대시보드."""
+"""FAB 이상감지 대시보드 — 프리미엄 모니터링 UI."""
 
 from __future__ import annotations
 
 import json
+from datetime import datetime
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -17,176 +18,413 @@ st.set_page_config(
     layout="wide",
 )
 
-# ── 글로벌 CSS ──
+# ══════════════════════════════════════════
+# 글로벌 CSS
+# ══════════════════════════════════════════
 
 st.markdown("""
 <style>
-/* 전체 배경 */
-.stApp { background-color: #0a0f1a; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-/* 사이드바 */
+/* ── 전역 ── */
+* { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important; }
+.stApp { background: #030712; }
+.stApp > header { background: transparent !important; }
+
+/* 스크롤바 */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #0a0f1a; }
+::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+
+/* ── 사이드바 ── */
 section[data-testid="stSidebar"] {
-    background-color: #111827;
-    border-right: 1px solid #1f2937;
+    background: linear-gradient(180deg, #0f1629 0%, #0a0f1a 100%);
+    border-right: 1px solid rgba(255,255,255,0.06);
 }
-section[data-testid="stSidebar"] .stMarkdown h1 {
-    background: linear-gradient(135deg, #10b981, #3b82f6);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    font-size: 1.6rem;
-    letter-spacing: -0.5px;
-}
+section[data-testid="stSidebar"] > div { padding-top: 1rem; }
 
-/* 메트릭 카드 */
-div[data-testid="stMetric"] {
-    background: linear-gradient(135deg, #111827, #1a2332);
-    border: 1px solid #1f2937;
-    border-radius: 12px;
-    padding: 16px 20px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
-}
-div[data-testid="stMetric"] label {
-    color: #9ca3af !important;
-    font-size: 0.85rem !important;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
-    font-size: 2rem !important;
-    font-weight: 700 !important;
-}
+/* ── 메트릭 (숨김 - 커스텀 카드 사용) ── */
+div[data-testid="stMetric"] { display: none; }
 
-/* KPI 카드 색상 */
-.kpi-danger div[data-testid="stMetricValue"] { color: #ef4444 !important; }
-.kpi-warning div[data-testid="stMetricValue"] { color: #f59e0b !important; }
-.kpi-info div[data-testid="stMetricValue"] { color: #3b82f6 !important; }
-.kpi-success div[data-testid="stMetricValue"] { color: #10b981 !important; }
-
-/* 데이터프레임 */
+/* ── 데이터프레임 ── */
 div[data-testid="stDataFrame"] {
-    border: 1px solid #1f2937;
-    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
     overflow: hidden;
 }
+div[data-testid="stDataFrame"] [data-testid="StyledDataFrameRowCell"],
+div[data-testid="stDataFrame"] [data-testid="StyledDataFrameDataCell"] {
+    font-size: 0.85rem;
+}
 
-/* 섹션 헤더 */
-.section-header {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: #e5e7eb;
-    margin-bottom: 12px;
-    padding-bottom: 8px;
-    border-bottom: 2px solid #1f2937;
+/* ── expander ── */
+details {
+    border: 1px solid rgba(255,255,255,0.06) !important;
+    border-radius: 12px !important;
+    background: rgba(17,24,39,0.7) !important;
+    backdrop-filter: blur(20px) !important;
+}
+
+/* ── 버튼 ── */
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+    border: none !important;
+    font-weight: 600 !important;
+    border-radius: 10px !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 4px 15px rgba(16,185,129,0.3) !important;
+}
+.stButton > button[kind="primary"]:hover {
+    box-shadow: 0 6px 25px rgba(16,185,129,0.5) !important;
+    transform: translateY(-1px) !important;
+}
+.stButton > button[kind="secondary"] {
+    background: rgba(55,65,81,0.5) !important;
+    border: 1px solid rgba(75,85,99,0.5) !important;
+    border-radius: 10px !important;
+    transition: all 0.2s ease !important;
+}
+.stButton > button[kind="secondary"]:hover {
+    background: rgba(55,65,81,0.8) !important;
+}
+
+/* ── divider ── */
+hr { border-color: rgba(255,255,255,0.06) !important; }
+
+/* ── 탭 ── */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 4px;
+    background: rgba(17,24,39,0.5);
+    border-radius: 10px;
+    padding: 4px;
+    border: 1px solid rgba(255,255,255,0.06);
+}
+.stTabs [data-baseweb="tab"] {
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-weight: 500;
+}
+
+/* ── Radio 수평 ── */
+div[data-testid="stRadio"] > div { gap: 0.3rem; }
+div[data-testid="stRadio"] label[data-baseweb="radio"] {
+    background: rgba(17,24,39,0.5);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px;
+    padding: 6px 14px;
+    transition: all 0.2s ease;
+}
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) {
+    background: rgba(16,185,129,0.15);
+    border-color: rgba(16,185,129,0.4);
+}
+
+/* ══ 커스텀 컴포넌트 ══ */
+
+/* 로고 */
+.fab-logo {
+    text-align: center;
+    padding: 16px 0 8px;
+}
+.fab-logo-text {
+    font-size: 1.6rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, #10b981, #3b82f6, #8b5cf6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -1px;
+}
+.fab-logo-sub {
+    font-size: 0.7rem;
+    color: #6b7280;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-top: 2px;
+}
+
+/* 시스템 상태 표시기 */
+.sys-status {
     display: flex;
     align-items: center;
     gap: 8px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: rgba(16,185,129,0.08);
+    border: 1px solid rgba(16,185,129,0.15);
+    font-size: 0.8rem;
+    color: #9ca3af;
 }
-.section-header .icon {
-    font-size: 1.2rem;
+.sys-status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 8px rgba(16,185,129,0.6);
+    animation: pulse 2s ease-in-out infinite;
+}
+.sys-status-off .sys-status-dot {
+    background: #ef4444;
+    box-shadow: 0 0 8px rgba(239,68,68,0.6);
+}
+@keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+/* 네비게이션 */
+.nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    color: #9ca3af;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-bottom: 2px;
+}
+.nav-item:hover { background: rgba(255,255,255,0.04); color: #e5e7eb; }
+.nav-item.active {
+    background: rgba(16,185,129,0.1);
+    color: #10b981;
+    border-left: 3px solid #10b981;
+}
+
+/* KPI 카드 */
+.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.kpi-card {
+    background: rgba(17,24,39,0.6);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 16px;
+    padding: 24px;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+.kpi-card:hover { border-color: rgba(255,255,255,0.12); transform: translateY(-2px); }
+.kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 3px;
+}
+.kpi-danger::before { background: linear-gradient(90deg, #ef4444, #dc2626); }
+.kpi-warning::before { background: linear-gradient(90deg, #f59e0b, #d97706); }
+.kpi-info::before { background: linear-gradient(90deg, #3b82f6, #2563eb); }
+.kpi-success::before { background: linear-gradient(90deg, #10b981, #059669); }
+
+.kpi-icon {
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    margin-bottom: 16px;
+}
+.kpi-danger .kpi-icon { background: rgba(239,68,68,0.12); }
+.kpi-warning .kpi-icon { background: rgba(245,158,11,0.12); }
+.kpi-info .kpi-icon { background: rgba(59,130,246,0.12); }
+.kpi-success .kpi-icon { background: rgba(16,185,129,0.12); }
+
+.kpi-value {
+    font-size: 2.2rem;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 6px;
+}
+.kpi-danger .kpi-value { color: #ef4444; text-shadow: 0 0 30px rgba(239,68,68,0.3); }
+.kpi-warning .kpi-value { color: #f59e0b; text-shadow: 0 0 30px rgba(245,158,11,0.3); }
+.kpi-info .kpi-value { color: #3b82f6; text-shadow: 0 0 30px rgba(59,130,246,0.3); }
+.kpi-success .kpi-value { color: #10b981; text-shadow: 0 0 30px rgba(16,185,129,0.3); }
+
+.kpi-label {
+    color: #6b7280;
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+}
+
+/* 섹션 헤더 */
+.sh {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 24px 0 16px;
+}
+.sh-icon {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    background: rgba(16,185,129,0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+}
+.sh-text {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #e5e7eb;
+    letter-spacing: -0.3px;
+}
+.sh-line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(255,255,255,0.08), transparent);
+}
+
+/* 글래스 카드 */
+.glass {
+    background: rgba(17,24,39,0.6);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 16px;
+    padding: 24px;
+}
+.glass-sm {
+    background: rgba(17,24,39,0.6);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 16px;
+}
+
+/* 사이클 카드 */
+.cycle-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.cycle-item {
+    background: rgba(17,24,39,0.6);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px;
+    padding: 20px;
+    text-align: center;
+    transition: all 0.2s ease;
+}
+.cycle-item:hover { border-color: rgba(255,255,255,0.12); }
+.cycle-val {
+    font-size: 1.8rem;
+    font-weight: 800;
+    color: #10b981;
+    line-height: 1;
+    margin-bottom: 6px;
+}
+.cycle-lbl {
+    color: #6b7280;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 /* 상태 뱃지 */
 .badge {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     padding: 4px 12px;
     border-radius: 20px;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     font-weight: 600;
     letter-spacing: 0.3px;
 }
-.badge-critical { background: #7f1d1d; color: #fca5a5; border: 1px solid #dc2626; }
-.badge-warning { background: #78350f; color: #fcd34d; border: 1px solid #d97706; }
-.badge-detected { background: #7f1d1d; color: #fca5a5; }
-.badge-acknowledged { background: #78350f; color: #fcd34d; }
-.badge-investigating { background: #1e3a5f; color: #93c5fd; }
-.badge-resolved { background: #064e3b; color: #6ee7b7; }
-.badge-done { background: #064e3b; color: #6ee7b7; }
-.badge-pending { background: #374151; color: #9ca3af; }
-.badge-processing { background: #1e3a5f; color: #93c5fd; }
-.badge-failed { background: #7f1d1d; color: #fca5a5; }
+.badge-critical { background: rgba(239,68,68,0.12); color: #fca5a5; border: 1px solid rgba(239,68,68,0.25); }
+.badge-warning { background: rgba(245,158,11,0.12); color: #fcd34d; border: 1px solid rgba(245,158,11,0.25); }
+.badge-detected { background: rgba(239,68,68,0.12); color: #fca5a5; border: 1px solid rgba(239,68,68,0.2); }
+.badge-in_progress { background: rgba(59,130,246,0.12); color: #93c5fd; border: 1px solid rgba(59,130,246,0.2); }
+.badge-resolved { background: rgba(16,185,129,0.12); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.2); }
+.badge-done { background: rgba(16,185,129,0.12); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.2); }
+.badge-pending { background: rgba(107,114,128,0.12); color: #9ca3af; border: 1px solid rgba(107,114,128,0.2); }
+.badge-processing { background: rgba(59,130,246,0.12); color: #93c5fd; border: 1px solid rgba(59,130,246,0.2); }
+.badge-failed { background: rgba(239,68,68,0.12); color: #fca5a5; border: 1px solid rgba(239,68,68,0.2); }
+.badge-info { background: rgba(59,130,246,0.12); color: #93c5fd; border: 1px solid rgba(59,130,246,0.2); }
 
 /* 상세 카드 */
 .detail-card {
-    background: #111827;
-    border: 1px solid #1f2937;
-    border-radius: 12px;
-    padding: 20px;
+    background: rgba(17,24,39,0.6);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 16px;
+    padding: 24px;
     margin-bottom: 12px;
 }
 .detail-row {
     display: flex;
     justify-content: space-between;
-    padding: 6px 0;
-    border-bottom: 1px solid #1f293766;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
 }
-.detail-label { color: #9ca3af; font-size: 0.85rem; }
-.detail-value { color: #f3f4f6; font-weight: 500; }
+.detail-row:last-child { border-bottom: none; }
+.detail-label {
+    color: #6b7280;
+    font-size: 0.82rem;
+    font-weight: 500;
+}
+.detail-value {
+    color: #e5e7eb;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
 
-/* 사이클 카드 */
-.cycle-card {
-    background: linear-gradient(135deg, #111827, #1a2332);
-    border: 1px solid #1f2937;
-    border-radius: 12px;
-    padding: 20px;
+/* 선택 안내 */
+.select-hint {
     text-align: center;
+    color: #4b5563;
+    padding: 60px 20px;
+    font-size: 0.9rem;
 }
-.cycle-value {
-    font-size: 2rem;
-    font-weight: 700;
-    color: #10b981;
-}
-.cycle-label {
-    color: #9ca3af;
-    font-size: 0.8rem;
-    text-transform: uppercase;
-    margin-top: 4px;
+.select-hint-icon {
+    font-size: 2.5rem;
+    margin-bottom: 12px;
+    opacity: 0.3;
 }
 
-/* 로그인 폼 */
-.login-box {
-    background: #111827;
-    border: 1px solid #1f2937;
-    border-radius: 8px;
-    padding: 12px;
+/* 타임라인 아이템 */
+.tl-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
 }
+.tl-item:last-child { border-bottom: none; }
+.tl-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    margin-top: 5px;
+    flex-shrink: 0;
+}
+.tl-dot-critical { background: #ef4444; box-shadow: 0 0 8px rgba(239,68,68,0.5); }
+.tl-dot-warning { background: #f59e0b; box-shadow: 0 0 8px rgba(245,158,11,0.5); }
+.tl-title { color: #e5e7eb; font-size: 0.85rem; font-weight: 500; }
+.tl-meta { color: #6b7280; font-size: 0.75rem; margin-top: 2px; }
 
-/* expander 스타일 */
-details {
-    border: 1px solid #1f2937 !important;
-    border-radius: 8px !important;
-    background: #111827 !important;
+/* 빈 상태 */
+.empty-state {
+    text-align: center;
+    padding: 40px;
+    color: #4b5563;
 }
+.empty-state-icon { font-size: 3rem; margin-bottom: 12px; opacity: 0.3; }
+.empty-state-text { font-size: 0.9rem; }
 
-/* 버튼 */
-.stButton > button[kind="primary"] {
-    background: linear-gradient(135deg, #10b981, #059669) !important;
-    border: none !important;
-    font-weight: 600 !important;
+/* 애니메이션 */
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
 }
-.stButton > button[kind="secondary"] {
-    background: #374151 !important;
-    border: 1px solid #4b5563 !important;
-}
-
-/* divider */
-hr { border-color: #1f2937 !important; }
-
-/* 탭 */
-.stTabs [data-baseweb="tab-list"] {
-    gap: 4px;
-    background: #111827;
-    border-radius: 8px;
-    padding: 4px;
-}
-.stTabs [data-baseweb="tab"] {
-    border-radius: 6px;
-    padding: 8px 16px;
-}
+.animate-in { animation: fadeInUp 0.4s ease-out; }
 </style>
 """, unsafe_allow_html=True)
 
 
-# ── 헬퍼 함수 ──
+# ══════════════════════════════════════════
+# 헬퍼 함수
+# ══════════════════════════════════════════
 
 def badge(text: str, variant: str = "") -> str:
     cls = f"badge badge-{variant}" if variant else "badge"
@@ -194,15 +432,36 @@ def badge(text: str, variant: str = "") -> str:
 
 
 def section_header(icon: str, text: str):
-    st.markdown(f'<div class="section-header"><span class="icon">{icon}</span>{text}</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="sh"><div class="sh-icon">{icon}</div>'
+        f'<span class="sh-text">{text}</span><div class="sh-line"></div></div>',
+        unsafe_allow_html=True,
+    )
 
 
 def detail_row(label: str, value) -> str:
-    return f'<div class="detail-row"><span class="detail-label">{label}</span><span class="detail-value">{value}</span></div>'
+    return (
+        f'<div class="detail-row">'
+        f'<span class="detail-label">{label}</span>'
+        f'<span class="detail-value">{value}</span></div>'
+    )
+
+
+def kpi_card(icon: str, value, label: str, variant: str) -> str:
+    return (
+        f'<div class="kpi-card kpi-{variant} animate-in">'
+        f'<div class="kpi-icon">{icon}</div>'
+        f'<div class="kpi-value">{value}</div>'
+        f'<div class="kpi-label">{label}</div></div>'
+    )
 
 
 def cycle_card(value, label: str) -> str:
-    return f'<div class="cycle-card"><div class="cycle-value">{value}</div><div class="cycle-label">{label}</div></div>'
+    return (
+        f'<div class="cycle-item">'
+        f'<div class="cycle-val">{value}</div>'
+        f'<div class="cycle-lbl">{label}</div></div>'
+    )
 
 
 # ── 포맷 헬퍼 ──
@@ -217,11 +476,20 @@ def _fmt_time(t: str | None) -> str:
     if not t:
         return ""
     s = str(t)[:19]
-    # "2026-03-11 09:12:06" → "03/11 09:12"
     try:
         return s[5:10].replace("-", "/") + " " + s[11:16]
     except Exception:
         return s
+
+
+# ── 차트 공통 레이아웃 ──
+
+_CHART_LAYOUT = dict(
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
+    font=dict(family="Inter, sans-serif", color="#9ca3af"),
+    margin=dict(l=0, r=0, t=0, b=0),
+)
 
 
 # ── 관리자 비밀번호 ──
@@ -242,43 +510,62 @@ def _is_admin() -> bool:
     return st.session_state.get("role") == "admin"
 
 
-# ── 사이드바 ──
+# ══════════════════════════════════════════
+# 사이드바
+# ══════════════════════════════════════════
 
-st.sidebar.title("FAB 이상감지")
-st.sidebar.caption("반도체 공정 AI 이상감지 시스템")
+with st.sidebar:
+    # 로고
+    st.markdown(
+        '<div class="fab-logo">'
+        '<div class="fab-logo-text">FAB SENTINEL</div>'
+        '<div class="fab-logo-sub">AI Anomaly Detection</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
-if _is_admin():
-    st.sidebar.markdown(f'{badge("ADMIN", "done")}', unsafe_allow_html=True)
-    if st.sidebar.button("로그아웃", use_container_width=True):
-        st.session_state.role = "viewer"
-        st.rerun()
-else:
-    with st.sidebar.expander("관리자 로그인"):
-        pw = st.text_input("비밀번호", type="password", key="admin_pw")
-        if st.button("로그인", use_container_width=True):
-            if pw == ADMIN_PASSWORD:
-                st.session_state.role = "admin"
-                st.rerun()
-            else:
-                st.error("비밀번호 틀림")
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
-st.sidebar.divider()
+    # 시스템 상태
+    try:
+        health = api.get_health()
+        is_ok = health.get("status") == "ok"
+    except Exception:
+        is_ok = False
 
-page = st.sidebar.radio(
-    "페이지",
-    ["대시보드", "이상 목록", "규칙 관리", "감지 로그"],
-)
+    status_cls = "sys-status" if is_ok else "sys-status sys-status-off"
+    status_text = "시스템 정상" if is_ok else "연결 끊김"
+    st.markdown(
+        f'<div class="{status_cls}">'
+        f'<div class="sys-status-dot"></div>{status_text}</div>',
+        unsafe_allow_html=True,
+    )
 
-st.sidebar.divider()
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-try:
-    health = api.get_health()
-    if health.get("status") == "ok":
-        st.sidebar.markdown(f"🟢 시스템 정상")
+    # 관리자 상태
+    if _is_admin():
+        st.markdown(f'{badge("ADMIN", "done")}', unsafe_allow_html=True)
+        if st.button("로그아웃", use_container_width=True):
+            st.session_state.role = "viewer"
+            st.rerun()
     else:
-        st.sidebar.markdown(f"🟡 {health.get('status')}")
-except Exception:
-    st.sidebar.markdown("🔴 API 연결 실패")
+        with st.expander("관리자 로그인"):
+            pw = st.text_input("비밀번호", type="password", key="admin_pw")
+            if st.button("로그인", use_container_width=True):
+                if pw == ADMIN_PASSWORD:
+                    st.session_state.role = "admin"
+                    st.rerun()
+                else:
+                    st.error("비밀번호 틀림")
+
+    st.divider()
+
+    page = st.radio(
+        "페이지",
+        ["대시보드", "이상 목록", "규칙 관리", "감지 로그"],
+        label_visibility="collapsed",
+    )
 
 
 # ══════════════════════════════════════════
@@ -298,71 +585,107 @@ if page == "대시보드":
     summary = overview.get("anomaly_summary", {})
     last_cycle = overview.get("last_cycle")
 
-    # KPI
-    section_header("📊", "실시간 현황")
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        st.markdown('<div class="kpi-danger">', unsafe_allow_html=True)
-        st.metric("활성 위험", summary.get("active_critical", 0))
-        st.markdown('</div>', unsafe_allow_html=True)
-    with c2:
-        st.markdown('<div class="kpi-warning">', unsafe_allow_html=True)
-        st.metric("활성 경고", summary.get("active_warning", 0))
-        st.markdown('</div>', unsafe_allow_html=True)
-    with c3:
-        st.markdown('<div class="kpi-info">', unsafe_allow_html=True)
-        st.metric("24h 이상", summary.get("total", 0))
-        st.markdown('</div>', unsafe_allow_html=True)
-    with c4:
-        st.markdown('<div class="kpi-success">', unsafe_allow_html=True)
-        st.metric("활성 규칙", stats.get("active_rules", 0))
-        st.markdown('</div>', unsafe_allow_html=True)
+    # ── KPI 카드 ──
+    st.markdown(
+        '<div class="kpi-grid">'
+        + kpi_card("🚨", summary.get("active_critical", 0), "활성 위험", "danger")
+        + kpi_card("⚠️", summary.get("active_warning", 0), "활성 경고", "warning")
+        + kpi_card("📊", summary.get("total", 0), "24H 이상", "info")
+        + kpi_card("📋", stats.get("active_rules", 0), "활성 규칙", "success")
+        + '</div>',
+        unsafe_allow_html=True,
+    )
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
 
-    col_left, col_right = st.columns(2)
+    col_left, col_right = st.columns([1, 1], gap="medium")
 
+    # ── 좌: 상태 분포 (도넛) ──
     with col_left:
         section_header("📈", "상태 분포 (24h)")
-        status_data = {
-            "감지됨": summary.get("detected", 0),
-            "처리중": summary.get("in_progress", 0),
-            "해결": summary.get("resolved", 0),
-        }
-        labels = list(status_data.keys())
-        values = list(status_data.values())
-        colors = ["#ef4444", "#f59e0b", "#10b981"]
-        fig = go.Figure(go.Bar(
-            x=values, y=labels, orientation="h",
-            marker_color=colors,
-            text=values, textposition="auto",
-            textfont=dict(size=14, color="white"),
-        ))
-        fig.update_layout(
-            height=180, margin=dict(l=0, r=20, t=0, b=0),
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font_color="#9ca3af",
-            xaxis=dict(showgrid=False, showticklabels=False),
-            yaxis=dict(showgrid=False, tickfont=dict(size=13)),
-            bargap=0.35,
-        )
-        st.plotly_chart(fig, use_container_width=True)
 
+        detected = summary.get("detected", 0)
+        in_progress = summary.get("in_progress", 0)
+        resolved = summary.get("resolved", 0)
+        total = detected + in_progress + resolved
+
+        if total > 0:
+            fig = go.Figure(go.Pie(
+                values=[detected, in_progress, resolved],
+                labels=["감지됨", "처리중", "해결"],
+                hole=0.65,
+                marker=dict(
+                    colors=["#ef4444", "#f59e0b", "#10b981"],
+                    line=dict(color="#030712", width=3),
+                ),
+                textinfo="label+value",
+                textfont=dict(size=13, color="white"),
+                hovertemplate="<b>%{label}</b><br>%{value}건 (%{percent})<extra></extra>",
+            ))
+            fig.update_layout(
+                **_CHART_LAYOUT,
+                height=260,
+                showlegend=False,
+                annotations=[dict(
+                    text=f"<b>{total}</b><br><span style='font-size:11px;color:#6b7280'>전체</span>",
+                    x=0.5, y=0.5, font=dict(size=28, color="#e5e7eb"),
+                    showarrow=False,
+                )],
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.markdown(
+                '<div class="empty-state"><div class="empty-state-icon">✨</div>'
+                '<div class="empty-state-text">감지된 이상 없음</div></div>',
+                unsafe_allow_html=True,
+            )
+
+    # ── 우: 마지막 감지 사이클 ──
     with col_right:
         section_header("🔄", "마지막 감지 사이클")
+
         if last_cycle:
-            lc1, lc2, lc3 = st.columns(3)
-            lc1.markdown(cycle_card(last_cycle.get("rules_evaluated", 0), "규칙 평가"), unsafe_allow_html=True)
-            lc2.markdown(cycle_card(last_cycle.get("anomalies_found", 0), "이상 감지"), unsafe_allow_html=True)
             dur = last_cycle.get("duration_ms")
-            lc3.markdown(cycle_card(f"{dur}ms" if dur else "-", "소요시간"), unsafe_allow_html=True)
+            st.markdown(
+                '<div class="cycle-grid">'
+                + cycle_card(last_cycle.get("rules_evaluated", 0), "규칙 평가")
+                + cycle_card(last_cycle.get("anomalies_found", 0), "이상 감지")
+                + cycle_card(f"{dur}ms" if dur else "-", "소요시간")
+                + '</div>',
+                unsafe_allow_html=True,
+            )
             st.caption(f"시작: {last_cycle.get('started_at', '')}")
         else:
-            st.info("아직 감지 사이클이 실행되지 않았습니다.")
+            st.markdown(
+                '<div class="empty-state"><div class="empty-state-icon">⏳</div>'
+                '<div class="empty-state-text">아직 감지 사이클이 실행되지 않았습니다</div></div>',
+                unsafe_allow_html=True,
+            )
 
-    st.markdown("<br>", unsafe_allow_html=True)
+        # 최근 이상 타임라인
+        try:
+            recent = api.get_anomalies(limit=5)
+            if recent:
+                section_header("⏱", "최근 이상")
+                tl_html = '<div class="glass-sm">'
+                for a in recent[:5]:
+                    sev = a.get("severity", "warning")
+                    tl_html += (
+                        f'<div class="tl-item">'
+                        f'<div class="tl-dot tl-dot-{sev}"></div>'
+                        f'<div>'
+                        f'<div class="tl-title">{(a.get("title") or "")[:40]}</div>'
+                        f'<div class="tl-meta">{_fmt_time(a.get("detected_at"))} · {_CAT_MAP.get(a.get("category", ""), a.get("category", ""))}</div>'
+                        f'</div></div>'
+                    )
+                tl_html += '</div>'
+                st.markdown(tl_html, unsafe_allow_html=True)
+        except Exception:
+            pass
 
+    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+
+    # ── 수동 감지 버튼 ──
     if _is_admin():
         if st.button("⚡ 수동 감지 실행", type="primary", use_container_width=True):
             with st.spinner("감지 중..."):
@@ -390,7 +713,10 @@ elif page == "이상 목록":
     status_filter = st.radio(
         "상태 필터",
         ["전체", "detected", "in_progress", "resolved"],
-        format_func=lambda x: {"전체": "전체", "detected": "감지됨", "in_progress": "처리중", "resolved": "해결"}[x],
+        format_func=lambda x: {
+            "전체": "전체", "detected": "🔴 감지됨",
+            "in_progress": "🔧 처리중", "resolved": "✅ 해결",
+        }[x],
         horizontal=True,
     )
 
@@ -404,10 +730,14 @@ elif page == "이상 목록":
         st.stop()
 
     if not anomalies:
-        st.info("해당 상태의 이상이 없습니다.")
+        st.markdown(
+            '<div class="empty-state"><div class="empty-state-icon">✨</div>'
+            '<div class="empty-state-text">해당 상태의 이상이 없습니다</div></div>',
+            unsafe_allow_html=True,
+        )
         st.stop()
 
-    col_list, col_detail = st.columns([1, 1])
+    col_list, col_detail = st.columns([1, 1], gap="medium")
 
     with col_list:
         st.markdown(f"**{len(anomalies)}건**")
@@ -439,7 +769,12 @@ elif page == "이상 목록":
     with col_detail:
         selected_rows = selection.selection.rows if selection and selection.selection else []
         if not selected_rows:
-            st.markdown('<div class="detail-card" style="text-align:center;color:#6b7280;padding:40px;">좌측 목록에서 이상을 선택하세요</div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="detail-card"><div class="select-hint">'
+                '<div class="select-hint-icon">👈</div>'
+                '좌측 목록에서 이상을 선택하세요</div></div>',
+                unsafe_allow_html=True,
+            )
         else:
             idx = selected_rows[0]
             a = anomalies[idx]
@@ -447,15 +782,17 @@ elif page == "이상 목록":
             status_val = a.get("status", "detected")
 
             # 상세 카드
-            badges_html = f'{badge(sev.upper(), sev)} {badge(status_val, status_val)}'
+            sev_label = {"critical": "CRITICAL", "warning": "WARNING"}.get(sev, sev.upper())
+            status_label = {"detected": "감지됨", "in_progress": "처리중", "resolved": "해결"}.get(status_val, status_val)
+            badges_html = f'{badge(sev_label, sev)} {badge(status_label, status_val)}'
+
             detail_html = f"""
-            <div class="detail-card">
-                <div style="margin-bottom:12px">{badges_html}</div>
-                <h3 style="color:#f3f4f6;margin:8px 0">{a.get('title', '')}</h3>
-                {detail_row('이상 ID', a.get('anomaly_id', ''))}
-                {detail_row('카테고리', a.get('category', ''))}
+            <div class="detail-card animate-in">
+                <div style="margin-bottom:16px">{badges_html}</div>
+                <h3 style="color:#f3f4f6;margin:0 0 16px;font-size:1.1rem;font-weight:700;line-height:1.4">{a.get('title', '')}</h3>
+                {detail_row('카테고리', _CAT_MAP.get(a.get('category', ''), a.get('category', '')))}
                 {detail_row('영향 대상', a.get('affected_entity', '') or '-')}
-                {detail_row('감지 시각', a.get('detected_at', ''))}
+                {detail_row('감지 시각', a.get('detected_at', '')[:19] if a.get('detected_at') else '-')}
                 {detail_row('측정값', a.get('measured_value', 'N/A'))}
                 {detail_row('임계치', a.get('threshold_value', 'N/A'))}
             </div>
@@ -484,9 +821,9 @@ elif page == "이상 목록":
                 except (json.JSONDecodeError, TypeError):
                     st.markdown(str(suggestion))
 
-            # 상태 전이 (관리자만)
+            # 상태 전이
             if _is_admin():
-                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
                 current = a.get("status", "detected")
                 anomaly_id = a["anomaly_id"]
 
@@ -499,7 +836,7 @@ elif page == "이상 목록":
                         except Exception as e:
                             st.error(str(e))
                 if current in ("detected", "in_progress"):
-                    if btn_cols[1].button("✔ 해결", key=f"res_{anomaly_id}", use_container_width=True):
+                    if btn_cols[1].button("✅ 해결", key=f"res_{anomaly_id}", use_container_width=True):
                         try:
                             api.update_anomaly_status(anomaly_id, "resolved", resolved_by="dashboard")
                             st.rerun()
@@ -536,13 +873,12 @@ elif page == "규칙 관리":
 
             # ── 탭1: 조건 감시 ──
             with add_tab1:
-                st.markdown("""
-                <div class="detail-card">
-                    <p style="color:#9ca3af;margin:0">도구를 연결하고, 감시 조건을 설정합니다.</p>
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(
+                    '<div class="glass-sm" style="margin-bottom:16px">'
+                    '<p style="color:#9ca3af;margin:0;font-size:0.85rem">도구를 연결하고, 감시 조건을 설정합니다.</p></div>',
+                    unsafe_allow_html=True,
+                )
 
-                # 도구 선택 + 감시 유형 (form 밖 — 변경 시 즉시 반영)
                 tool_opts = _tool_options()
                 cond_c1, cond_c2 = st.columns([2, 1])
                 with cond_c1:
@@ -569,7 +905,6 @@ elif page == "규칙 관리":
                 if tool_info:
                     st.caption(f"📋 {tool_info.get('description', '')}")
 
-                # 감시 유형별 안내
                 if th_check_type == "delta":
                     st.info("선택한 컬럼의 **변화율(절대값)**이 임계치를 초과하면 이상으로 판단합니다.")
                 elif th_check_type == "absence":
@@ -579,7 +914,6 @@ elif page == "규칙 관리":
                     th_name = st.text_input("규칙명 *", placeholder="예: 컨베이어 부하율 과부하")
 
                     if th_check_type != "absence":
-                        # 컬럼 선택 (도구에 따라 동적 변경)
                         th_column = None
                         if tool_info:
                             columns = tool_info.get("columns", [])
@@ -592,7 +926,6 @@ elif page == "규칙 관리":
                                 key="th_col",
                             )
 
-                        # 임계치
                         tc1, tc2, tc3 = st.columns(3)
                         th_op = tc1.selectbox("조건", [">", "<", ">=", "<="], key="th_op")
                         th_warn = tc2.number_input(
@@ -638,18 +971,17 @@ elif page == "규칙 관리":
 
             # ── 탭2: AI 판단 ──
             with add_tab2:
-                st.markdown("""
-                <div class="detail-card">
-                    <p style="color:#9ca3af;margin:0">도구를 연결하고, 자연어로 이상 조건을 설명하면 AI가 판단합니다.</p>
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(
+                    '<div class="glass-sm" style="margin-bottom:16px">'
+                    '<p style="color:#9ca3af;margin:0;font-size:0.85rem">도구를 연결하고, 자연어로 이상 조건을 설명하면 AI가 판단합니다.</p></div>',
+                    unsafe_allow_html=True,
+                )
 
                 st.markdown("**💡 이렇게 설명해보세요:**")
                 st.caption("- _특정 공정만 유독 WIP가 높으면 이상. 전체적으로 높은 건 정상._")
                 st.caption("- _ERROR 상태 AGV가 전체의 30%를 넘으면 위험_")
                 st.caption("- _설비가 DOWN인데 알람이 없으면 비정상. 알람이 있으면 대응 중._")
 
-                # 도구 선택 (form 밖 — 변경 시 즉시 반영)
                 ai_tool = st.selectbox(
                     "데이터 도구 *",
                     options=list(tool_opts.keys()),
@@ -663,8 +995,6 @@ elif page == "규칙 관리":
 
                 with st.form("llm_form"):
                     ai_name = st.text_input("규칙명 *", placeholder="예: 특정 공정만 WIP 높으면 이상")
-
-                    # 자연어 조건
                     ai_prompt = st.text_area(
                         "이상 조건 설명 *",
                         height=120,
@@ -699,10 +1029,14 @@ elif page == "규칙 관리":
     # ── 규칙 목록 + 상세 ──
 
     if not rules:
-        st.info("등록된 규칙이 없습니다.")
+        st.markdown(
+            '<div class="empty-state"><div class="empty-state-icon">📋</div>'
+            '<div class="empty-state-text">등록된 규칙이 없습니다</div></div>',
+            unsafe_allow_html=True,
+        )
         st.stop()
 
-    col_list, col_detail = st.columns([1, 1])
+    col_list, col_detail = st.columns([1, 1], gap="medium")
 
     with col_list:
         st.markdown(f"**{len(rules)}개 규칙**")
@@ -734,47 +1068,50 @@ elif page == "규칙 관리":
     with col_detail:
         selected_rows = selection.selection.rows if selection and selection.selection else []
         if not selected_rows:
-            st.markdown('<div class="detail-card" style="text-align:center;color:#6b7280;padding:40px;">좌측 목록에서 규칙을 선택하세요</div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="detail-card"><div class="select-hint">'
+                '<div class="select-hint-icon">👈</div>'
+                '좌측 목록에서 규칙을 선택하세요</div></div>',
+                unsafe_allow_html=True,
+            )
         else:
             idx = selected_rows[0]
             r = rules[idx]
             rule_id = r["rule_id"]
 
             is_tool = r.get("source_type") == "tool"
-            src_label = "도구" if is_tool else "SQL"
+            src_label = "TOOL" if is_tool else "SQL"
             tool_label = ""
             if is_tool and r.get("tool_name") in tool_catalog:
                 tool_label = tool_catalog[r["tool_name"]]["label"]
 
-            # 상세 카드
+            ct = r.get("check_type", "threshold")
             badges_html = (
-                f'{badge(r.get("category", ""), "info")} '
-                f'{badge(r.get("check_type", ""), "pending")} '
+                f'{badge(_CAT_MAP.get(r.get("category", ""), r.get("category", "")), "info")} '
+                f'{badge(_CHECK_MAP.get(ct, ct), "pending")} '
                 f'{badge(src_label, "done" if is_tool else "processing")}'
             )
+
             detail_html = f"""
-            <div class="detail-card">
-                <div style="margin-bottom:12px">{badges_html}</div>
-                <h3 style="color:#f3f4f6;margin:8px 0">{r.get('rule_name', '')}</h3>
+            <div class="detail-card animate-in">
+                <div style="margin-bottom:16px">{badges_html}</div>
+                <h3 style="color:#f3f4f6;margin:0 0 16px;font-size:1.1rem;font-weight:700">{r.get('rule_name', '')}</h3>
                 {detail_row('데이터 소스', f'🔧 {tool_label} ({r.get("tool_name", "")})' if is_tool else '📝 SQL 쿼리')}
                 {detail_row('감시 컬럼', r.get('tool_column') or '-') if is_tool else ''}
-                {detail_row('연산자', r.get('threshold_op', '>')) if r.get('check_type') != 'llm' else ''}
-                {detail_row('경고 임계치', r.get('warning_value', '-')) if r.get('check_type') != 'llm' else ''}
-                {detail_row('위험 임계치', r.get('critical_value', '-')) if r.get('check_type') != 'llm' else ''}
-                {detail_row('LLM 판단', '활성화' if r.get('llm_enabled') else '비활성화')}
+                {detail_row('연산자', r.get('threshold_op', '>')) if ct != 'llm' else ''}
+                {detail_row('경고 임계치', r.get('warning_value', '-')) if ct != 'llm' else ''}
+                {detail_row('위험 임계치', r.get('critical_value', '-')) if ct != 'llm' else ''}
+                {detail_row('LLM 판단', '🟢 활성화' if r.get('llm_enabled') else '⚪ 비활성화')}
             </div>
             """
             st.markdown(detail_html, unsafe_allow_html=True)
 
-            # LLM 프롬프트 표시
             if r.get("llm_prompt"):
                 st.markdown(f"**AI 조건**: {r['llm_prompt']}")
 
-            # SQL 표시 (SQL 소스인 경우)
             if not is_tool and r.get("query_template"):
                 st.code(r["query_template"], language="sql")
 
-            # 관리자: 삭제 + 테스트
             if _is_admin():
                 bc1, bc2 = st.columns(2)
                 if bc1.button("🧪 테스트", key=f"test_{rule_id}", use_container_width=True):
@@ -794,7 +1131,7 @@ elif page == "규칙 관리":
 
 
 # ══════════════════════════════════════════
-# 페이지 4: 처리 로그
+# 페이지 4: 감지 로그
 # ══════════════════════════════════════════
 
 elif page == "감지 로그":
@@ -804,28 +1141,34 @@ elif page == "감지 로그":
     try:
         overview = api.get_overview()
         last_cycle = overview.get("last_cycle")
+
         if last_cycle:
             section_header("🔄", "마지막 감지 사이클")
-            lc1, lc2, lc3, lc4 = st.columns(4)
-            lc1.markdown(cycle_card(last_cycle.get("rules_evaluated", 0), "규칙 평가"), unsafe_allow_html=True)
-            lc2.markdown(cycle_card(last_cycle.get("anomalies_found", 0), "이상 감지"), unsafe_allow_html=True)
             dur = last_cycle.get("duration_ms")
-            lc3.markdown(cycle_card(f"{dur}ms" if dur else "-", "소요시간"), unsafe_allow_html=True)
-            lc4.markdown(cycle_card(_fmt_time(last_cycle.get("started_at")), "시작시각"), unsafe_allow_html=True)
+            c1, c2, c3, c4 = st.columns(4)
+            c1.markdown(cycle_card(last_cycle.get("rules_evaluated", 0), "규칙 평가"), unsafe_allow_html=True)
+            c2.markdown(cycle_card(last_cycle.get("anomalies_found", 0), "이상 감지"), unsafe_allow_html=True)
+            c3.markdown(cycle_card(f"{dur}ms" if dur else "-", "소요시간"), unsafe_allow_html=True)
+            c4.markdown(cycle_card(_fmt_time(last_cycle.get("started_at")), "시작시각"), unsafe_allow_html=True)
         else:
-            st.info("감지 사이클 이력이 없습니다.")
+            st.markdown(
+                '<div class="empty-state"><div class="empty-state-icon">⏳</div>'
+                '<div class="empty-state-text">감지 사이클 이력이 없습니다</div></div>',
+                unsafe_allow_html=True,
+            )
     except Exception as e:
         st.error(f"조회 실패: {e}")
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
 
-    # 최근 감지된 이상 목록
+    # 최근 감지 이력
     section_header("📊", "최근 감지 이력")
     try:
         anomalies = api.get_anomalies(limit=50)
         if anomalies:
             status_labels = {"detected": "감지됨", "in_progress": "처리중", "resolved": "해결"}
             status_icons = {"detected": "🔴", "in_progress": "🔧", "resolved": "✅"}
+
             for status_val in ["detected", "in_progress", "resolved"]:
                 filtered = [a for a in anomalies if a.get("status") == status_val]
                 if filtered:
@@ -855,6 +1198,10 @@ elif page == "감지 로그":
                     )
                     st.markdown("")
         else:
-            st.info("감지된 이상이 없습니다.")
+            st.markdown(
+                '<div class="empty-state"><div class="empty-state-icon">✨</div>'
+                '<div class="empty-state-text">감지된 이상이 없습니다</div></div>',
+                unsafe_allow_html=True,
+            )
     except Exception as e:
         st.error(f"조회 실패: {e}")
