@@ -14,10 +14,15 @@ dependencies = [
     "pydantic-settings>=2.0",
     "pyyaml>=6.0",
     "nicegui>=3.8",
+    "plotly>=5.24",
+    "pandas>=2.2",
 ]
 
 [project.optional-dependencies]
 oracle = ["oracledb>=2.0"]
+
+[project.scripts]
+fab-anomaly = "main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]

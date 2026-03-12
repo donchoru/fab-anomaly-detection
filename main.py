@@ -144,10 +144,14 @@ app.include_router(rca_router)
 app.include_router(users_router)
 
 
-if __name__ == "__main__":
+def main():
     import uvicorn
     uvicorn.run(
         app,
         host=settings.host,
         port=settings.port,
     )
+
+
+if __name__ == "__main__":
+    main()
