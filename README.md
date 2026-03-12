@@ -200,7 +200,20 @@ chmod +x setup.sh
 
 `--with-demo` 옵션은 5개 이상 시나리오 + RCA 분석 데이터를 자동 주입합니다.
 
-### 수동 설정
+### 수동 설정 (uv)
+
+```bash
+# 1. uv로 가상환경 + 패키지 설치 (빠름)
+uv sync
+
+# 2. DB 초기화
+uv run python init_db.py
+
+# 3. 데모 데이터 주입 (선택)
+uv run python data_injector.py --speed 100 --reset
+```
+
+### 수동 설정 (pip)
 
 ```bash
 # 1. 가상환경 생성 + 패키지 설치
