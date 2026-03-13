@@ -222,7 +222,7 @@ def main():
         port=3009,
         title="FLOPI",
         dark=True,
-        reload=False,
+        reload=True,
         storage_secret="fab-sentinel-secret",
     )
 
