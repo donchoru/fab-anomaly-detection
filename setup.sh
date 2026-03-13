@@ -54,12 +54,12 @@ echo -e "${BOLD}╚════════════════════�
 print_step 1 "Python 환경 확인"
 
 PYTHON=""
-for cmd in python3.14 python3.13 python3.12 python3; do
+for cmd in python3.11 python3.12 python3.13 python3; do
     if command -v $cmd &>/dev/null; then
         ver=$($cmd --version 2>&1 | grep -oE '[0-9]+\.[0-9]+')
         major=$(echo $ver | cut -d. -f1)
         minor=$(echo $ver | cut -d. -f2)
-        if [ "$major" -ge 3 ] && [ "$minor" -ge 12 ]; then
+        if [ "$major" -ge 3 ] && [ "$minor" -ge 11 ]; then
             PYTHON=$cmd
             break
         fi
@@ -67,7 +67,7 @@ for cmd in python3.14 python3.13 python3.12 python3; do
 done
 
 if [ -z "$PYTHON" ]; then
-    print_err "Python 3.12 이상이 필요합니다."
+    print_err "Python 3.11 이상이 필요합니다."
     echo "  설치: https://www.python.org/downloads/"
     exit 1
 fi
